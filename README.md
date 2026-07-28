@@ -31,8 +31,8 @@ Unsupported executable versions are rejected without modifying memory.
    WINEDLLOVERRIDES="version=n,b" %command%
    ```
 
-4. Select the game's 60 FPS mode. Set VSync and the display refresh rate so
-   they do not impose a separate 60 Hz limit.
+4. Select the game's 60 FPS mode. Nioh has no VSync toggle; ensure the desktop,
+   compositor, driver, and any external limiter are not capped at 60 Hz/FPS.
 5. Check `Nioh1Fix.log` after launch. A successful load reports both gameplay
    profiles patched to the configured target.
 
