@@ -23,23 +23,31 @@ constexpr int kMinTargetFps = 60;
 constexpr int kMaxTargetFps = 360;
 constexpr DWORD kMonitorIntervalMs = 250;
 constexpr DWORD kMonitorDurationMs = 30'000;
-constexpr std::array<std::uint8_t, 52> kPresentSignature{
+constexpr DWORD kDiagnosticsIntervalMs = 2'000;
+constexpr std::size_t kActiveFrameProfileRva = 0x01BB01E8;
+constexpr std::size_t kFrameControllerRva = 0x019301D0;
+constexpr std::size_t kCurrentFrameCountOffset = 0xC0;
+constexpr std::size_t kCompletedFrameCountOffset = 0xC4;
+constexpr LONG kFrameProfileCount = 4;
+constexpr std::size_t kFrameProfileSize = 12;
+constexpr std::array<std::uint8_t, 56> kPresentSignature{
     0x80, 0x7D, 0x00, 0x00, 0x74, 0x18, 0x48, 0x8B, 0x4D, 0x08, 0x33, 0xD2,
     0x48, 0x85, 0xC9, 0x75, 0x1A, 0x48, 0x8B, 0x8F, 0xB0, 0x2F, 0x00, 0x00,
     0x44, 0x8D, 0x42, 0x01, 0xEB, 0x10, 0x48, 0x8B, 0x8F, 0xB0, 0x2F, 0x00,
     0x00, 0x8B, 0x97, 0x8C, 0x2F, 0x00, 0x00, 0x45, 0x33, 0xC0, 0x48, 0x8B,
-    0x01, 0xFF, 0x50, 0x40,
+    0x01, 0xFF, 0x50, 0x40, 0x48, 0x8B, 0x4F, 0x30,
 };
-constexpr std::size_t kPresentSyncLoadOffset = 0x25;
-constexpr std::array<std::uint8_t, 6> kPresentSyncLoad{
-    0x8B, 0x97, 0x8C, 0x2F, 0x00, 0x00,
-};
-constexpr std::array<std::uint8_t, 6> kPresentSyncPatch{
-    0x33, 0xD2, 0x90, 0x90, 0x90, 0x90,
-};
+constexpr UINT kDxgiPresentTest = 0x1;
+constexpr UINT kDxgiPresentDoNotWait = 0x8;
+constexpr HRESULT kDxgiErrorWasStillDrawing =
+    static_cast<HRESULT>(0x887A000AUL);
+constexpr std::size_t kRendererSwapChainOffset = 0x2FB0;
 
 HMODULE gThisModule{};
 std::ofstream gLog;
+volatile LONG gPresentCallCount{};
+volatile LONG gPresentWouldBlockCount{};
+volatile LONG gPresentFailureCount{};
 
 void Log(const std::string& message)
 {
@@ -212,29 +220,111 @@ PatternSearchResult FindCodePattern(const PeImage& image,
     return result;
 }
 
-bool PatchPresentSyncInterval(std::uint8_t* address)
+HRESULT AggressivePresent(void* renderer, const std::uint8_t* presentConfig)
 {
-    if (std::memcmp(address, kPresentSyncLoad.data(), kPresentSyncLoad.size()) != 0) {
-        Log("Present sync-interval instruction verification failed.");
-        return false;
+    auto* swapChain = *reinterpret_cast<void**>(
+        static_cast<std::uint8_t*>(renderer) + kRendererSwapChainOffset);
+    UINT flags = kDxgiPresentDoNotWait;
+
+    if (*presentConfig != 0) {
+        if (auto* alternateSwapChain =
+                *reinterpret_cast<void* const*>(presentConfig + sizeof(void*))) {
+            swapChain = alternateSwapChain;
+        } else {
+            flags = kDxgiPresentTest;
+        }
     }
+
+    using PresentFunction = HRESULT(STDMETHODCALLTYPE*)(void*, UINT, UINT);
+    auto** vtable = *reinterpret_cast<void***>(swapChain);
+    const auto present = reinterpret_cast<PresentFunction>(vtable[8]);
+    const HRESULT result = present(swapChain, 0, flags);
+
+    InterlockedIncrement(&gPresentCallCount);
+    if (result == kDxgiErrorWasStillDrawing) {
+        InterlockedIncrement(&gPresentWouldBlockCount);
+    } else if (FAILED(result)) {
+        InterlockedIncrement(&gPresentFailureCount);
+    }
+    return result;
+}
+
+struct PresentPatch
+{
+    std::uint8_t* address{};
+    std::array<std::uint8_t, kPresentSignature.size()> bytes{};
+};
+
+PresentPatch PatchPresentDispatch(std::uint8_t* address)
+{
+    PresentPatch result{};
+    if (std::memcmp(
+            address, kPresentSignature.data(), kPresentSignature.size()) != 0) {
+        Log("Present dispatch verification failed.");
+        return result;
+    }
+
+    constexpr std::size_t stubSize = 34;
+    auto* stub = static_cast<std::uint8_t*>(VirtualAlloc(
+        nullptr, stubSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+    if (!stub) {
+        Log("VirtualAlloc failed while creating the non-blocking Present stub.");
+        return result;
+    }
+
+    std::array<std::uint8_t, stubSize> stubBytes{
+        0x48, 0x89, 0xF9,                         // mov rcx,rdi
+        0x48, 0x89, 0xEA,                         // mov rdx,rbp
+        0x48, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0,     // mov rax,helper
+        0xFF, 0xD0,                               // call rax
+        0x48, 0x8B, 0x4F, 0x30,                   // mov rcx,[rdi+30h]
+        0x48, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0,     // mov rax,continuation
+        0xFF, 0xE0,                               // jmp rax
+    };
+    const auto helperAddress =
+        reinterpret_cast<std::uintptr_t>(&AggressivePresent);
+    const auto continuationAddress =
+        reinterpret_cast<std::uintptr_t>(address + kPresentSignature.size());
+    std::memcpy(stubBytes.data() + 8, &helperAddress, sizeof(helperAddress));
+    std::memcpy(
+        stubBytes.data() + 24, &continuationAddress, sizeof(continuationAddress));
+    std::memcpy(stub, stubBytes.data(), stubBytes.size());
+
+    DWORD oldStubProtection{};
+    if (!VirtualProtect(stub, stubSize, PAGE_EXECUTE_READ, &oldStubProtection)) {
+        VirtualFree(stub, 0, MEM_RELEASE);
+        Log("VirtualProtect failed while enabling the non-blocking Present stub.");
+        return result;
+    }
+    FlushInstructionCache(GetCurrentProcess(), stub, stubSize);
+
+    result.address = address;
+    result.bytes.fill(0x90);
+    result.bytes[0] = 0x48;
+    result.bytes[1] = 0xB8;
+    const auto stubAddress = reinterpret_cast<std::uintptr_t>(stub);
+    std::memcpy(result.bytes.data() + 2, &stubAddress, sizeof(stubAddress));
+    result.bytes[10] = 0xFF;
+    result.bytes[11] = 0xE0;
 
     DWORD oldProtection{};
     if (!VirtualProtect(
-            address, kPresentSyncPatch.size(), PAGE_EXECUTE_READWRITE, &oldProtection)) {
-        Log("VirtualProtect failed before patching Present sync interval.");
-        return false;
+            address, result.bytes.size(), PAGE_EXECUTE_READWRITE, &oldProtection)) {
+        VirtualFree(stub, 0, MEM_RELEASE);
+        result = {};
+        Log("VirtualProtect failed before patching the Present dispatch.");
+        return result;
     }
 
-    std::memcpy(address, kPresentSyncPatch.data(), kPresentSyncPatch.size());
-    FlushInstructionCache(GetCurrentProcess(), address, kPresentSyncPatch.size());
+    std::memcpy(address, result.bytes.data(), result.bytes.size());
+    FlushInstructionCache(GetCurrentProcess(), address, result.bytes.size());
 
     DWORD ignored{};
-    if (!VirtualProtect(address, kPresentSyncPatch.size(), oldProtection, &ignored)) {
-        Log("Present was patched, but restoring code page protection failed.");
-        return false;
+    if (!VirtualProtect(address, result.bytes.size(), oldProtection, &ignored)) {
+        Log("Present dispatch was patched, but restoring page protection failed.");
+        return {};
     }
-    return true;
+    return result;
 }
 
 bool ApplyFrameratePatch(std::uint8_t* table, int targetFps)
@@ -272,13 +362,13 @@ bool MonitorRuntimePatches(const PeImage& image,
     const auto bytes = std::span<const std::uint8_t>(
         table, nioh1fix::kFrameProfileSignature.size());
     unsigned int reapplyCount{};
-    std::uint8_t* presentSyncAddress{};
+    PresentPatch presentPatch{};
 
     for (DWORD elapsed = kMonitorIntervalMs; elapsed <= kMonitorDurationMs;
          elapsed += kMonitorIntervalMs) {
         Sleep(kMonitorIntervalMs);
 
-        if (!presentSyncAddress) {
+        if (!presentPatch.address) {
             const auto present =
                 FindCodePattern(image, std::span<const std::uint8_t>(kPresentSignature));
             if (present.count > 1) {
@@ -286,26 +376,50 @@ bool MonitorRuntimePatches(const PeImage& image,
                 return false;
             }
             if (present.count == 1) {
-                presentSyncAddress = present.address + kPresentSyncLoadOffset;
-                if (!PatchPresentSyncInterval(presentSyncAddress)) {
+                presentPatch = PatchPresentDispatch(present.address);
+                if (!presentPatch.address) {
                     return false;
                 }
 
                 std::ostringstream message;
-                message << "Disabled Present SyncInterval at RVA=0x" << std::hex
+                message << "Forced non-blocking Present at RVA=0x" << std::hex
                         << std::uppercase
-                        << static_cast<std::size_t>(presentSyncAddress - image.base)
+                        << static_cast<std::size_t>(presentPatch.address - image.base)
                         << " after " << std::dec << elapsed << " ms.";
                 Log(message.str());
             }
-        } else if (std::memcmp(presentSyncAddress,
-                               kPresentSyncPatch.data(),
-                               kPresentSyncPatch.size()) != 0) {
-            if (!PatchPresentSyncInterval(presentSyncAddress)) {
-                Log("Present code changed unexpectedly after patching.");
-                return false;
+        } else if (std::memcmp(presentPatch.address,
+                               presentPatch.bytes.data(),
+                               presentPatch.bytes.size()) != 0) {
+            Log("Present dispatch changed unexpectedly after patching.");
+            return false;
+        }
+
+        if (elapsed % kDiagnosticsIntervalMs == 0) {
+            const auto activeProfile =
+                *reinterpret_cast<volatile LONG*>(image.base + kActiveFrameProfileRva);
+            const auto currentFrameCount = *reinterpret_cast<volatile LONG*>(
+                image.base + kFrameControllerRva + kCurrentFrameCountOffset);
+            const auto completedFrameCount = *reinterpret_cast<volatile LONG*>(
+                image.base + kFrameControllerRva + kCompletedFrameCountOffset);
+
+            std::ostringstream diagnostics;
+            diagnostics << "Frame diagnostics at " << elapsed
+                        << " ms: active_profile=" << activeProfile;
+            if (activeProfile >= 0 && activeProfile < kFrameProfileCount) {
+                const auto activeTarget = *reinterpret_cast<volatile float*>(
+                    table + static_cast<std::size_t>(activeProfile) *
+                                kFrameProfileSize);
+                diagnostics << ", active_target=" << activeTarget;
+            } else {
+                diagnostics << ", active_target=unavailable";
             }
-            Log("Present SyncInterval patch was restored and has been reapplied.");
+            diagnostics << ", engine_fps=" << completedFrameCount
+                        << ", current_frame_count=" << currentFrameCount
+                        << ", present_calls=" << gPresentCallCount
+                        << ", present_would_block=" << gPresentWouldBlockCount
+                        << ", present_failures=" << gPresentFailureCount << '.';
+            Log(diagnostics.str());
         }
 
         const auto state =
@@ -335,10 +449,11 @@ bool MonitorRuntimePatches(const PeImage& image,
     std::ostringstream result;
     result << "Runtime monitor completed after " << kMonitorDurationMs
            << " ms; profile state is patched, reapply_count=" << reapplyCount
-           << ", present_sync=" << (presentSyncAddress ? "disabled" : "not_found")
+           << ", present_dispatch="
+           << (presentPatch.address ? "non_blocking" : "not_found")
            << '.';
     Log(result.str());
-    return presentSyncAddress != nullptr;
+    return presentPatch.address != nullptr;
 }
 
 DWORD WINAPI MainThread(void*)
@@ -346,7 +461,7 @@ DWORD WINAPI MainThread(void*)
     const auto pluginPath = GetModulePath(gThisModule);
     const auto pluginDirectory = pluginPath.parent_path();
     gLog.open(pluginDirectory / L"Nioh1Fix.log", std::ios::trunc);
-    Log("Nioh1Fix v0.3.0");
+    Log("Nioh1Fix v0.5.0");
 
     const auto exeModule = GetModuleHandleW(nullptr);
     const auto exePath = GetModulePath(exeModule);
