@@ -399,7 +399,7 @@ AnimationPatch PatchAnimationUpdate(std::uint8_t* address)
     }
 
     constexpr std::size_t trampolineSize =
-        kAnimationUpdatePatchSize + 12;
+        kAnimationUpdatePatchSize + 13;
     auto* trampoline = static_cast<std::uint8_t*>(VirtualAlloc(
         nullptr,
         trampolineSize,
@@ -414,16 +414,17 @@ AnimationPatch PatchAnimationUpdate(std::uint8_t* address)
     std::memcpy(trampolineBytes.data(),
                 kAnimationUpdateSignature.data(),
                 kAnimationUpdatePatchSize);
-    trampolineBytes[kAnimationUpdatePatchSize] = 0x48;
-    trampolineBytes[kAnimationUpdatePatchSize + 1] = 0xB8;
+    trampolineBytes[kAnimationUpdatePatchSize] = 0x49;
+    trampolineBytes[kAnimationUpdatePatchSize + 1] = 0xBB;
     const auto continuationAddress =
         reinterpret_cast<std::uintptr_t>(
             address + kAnimationUpdatePatchSize);
     std::memcpy(trampolineBytes.data() + kAnimationUpdatePatchSize + 2,
                 &continuationAddress,
                 sizeof(continuationAddress));
-    trampolineBytes[kAnimationUpdatePatchSize + 10] = 0xFF;
-    trampolineBytes[kAnimationUpdatePatchSize + 11] = 0xE0;
+    trampolineBytes[kAnimationUpdatePatchSize + 10] = 0x41;
+    trampolineBytes[kAnimationUpdatePatchSize + 11] = 0xFF;
+    trampolineBytes[kAnimationUpdatePatchSize + 12] = 0xE3;
     std::memcpy(
         trampoline, trampolineBytes.data(), trampolineBytes.size());
 
@@ -782,7 +783,7 @@ DWORD WINAPI MainThread(void*)
     const auto pluginPath = GetModulePath(gThisModule);
     const auto pluginDirectory = pluginPath.parent_path();
     gLog.open(pluginDirectory / L"Nioh1Fix.log", std::ios::trunc);
-    Log("Nioh1Fix v1.1.0");
+    Log("Nioh1Fix v1.1.1");
     QueryPerformanceFrequency(&gPerformanceFrequency);
 
     const auto exeModule = GetModuleHandleW(nullptr);
