@@ -24,6 +24,13 @@ enum class MatchStatus
     ambiguous,
 };
 
+enum class ProfileState
+{
+    original,
+    patched,
+    invalid,
+};
+
 struct MatchResult
 {
     MatchStatus status{MatchStatus::not_found};
@@ -60,14 +67,44 @@ inline MatchResult FindFrameProfileTable(std::span<const std::uint8_t> bytes)
     return result;
 }
 
+inline ProfileState InspectGameplayProfiles(std::span<const std::uint8_t> table,
+                                            float targetFps)
+{
+    if (table.size() < kFrameProfileSignature.size()) {
+        return ProfileState::invalid;
+    }
+
+    std::array<std::uint8_t, kFrameProfileSignature.size()> normalized{};
+    std::memcpy(normalized.data(), table.data(), normalized.size());
+
+    float firstFps{};
+    float secondFps{};
+    std::memcpy(&firstFps, normalized.data() + kGameplayFpsOffsets[0], sizeof(firstFps));
+    std::memcpy(&secondFps, normalized.data() + kGameplayFpsOffsets[1], sizeof(secondFps));
+    for (const auto offset : kGameplayFpsOffsets) {
+        std::memcpy(normalized.data() + offset,
+                    kFrameProfileSignature.data() + offset,
+                    sizeof(float));
+    }
+
+    if (normalized != kFrameProfileSignature) {
+        return ProfileState::invalid;
+    }
+    if (firstFps == 60.0F && secondFps == 60.0F) {
+        return ProfileState::original;
+    }
+    if (firstFps == targetFps && secondFps == targetFps) {
+        return ProfileState::patched;
+    }
+    return ProfileState::invalid;
+}
+
 inline bool PatchGameplayProfiles(std::span<std::uint8_t> table, float targetFps)
 {
     if (table.size() < kFrameProfileSignature.size() || targetFps < 60.0F) {
         return false;
     }
-    if (std::memcmp(table.data(),
-                    kFrameProfileSignature.data(),
-                    kFrameProfileSignature.size()) != 0) {
+    if (InspectGameplayProfiles(table, targetFps) != ProfileState::original) {
         return false;
     }
 

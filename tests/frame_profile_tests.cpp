@@ -43,8 +43,14 @@ int main()
 
     auto table = std::span<std::uint8_t>(
         image.data() + tableOffset, nioh1fix::kFrameProfileSignature.size());
+    ok &= Check(nioh1fix::InspectGameplayProfiles(table, 120.0F) ==
+                    nioh1fix::ProfileState::original,
+                "original profile state was not recognized");
     ok &= Check(nioh1fix::PatchGameplayProfiles(table, 120.0F),
                 "valid profile patch was rejected");
+    ok &= Check(nioh1fix::InspectGameplayProfiles(table, 120.0F) ==
+                    nioh1fix::ProfileState::patched,
+                "patched profile state was not recognized");
     ok &= Check(ReadFloat(table, 0) == 120.0F, "first gameplay profile was not patched");
     ok &= Check(ReadFloat(table, 12) == 30.0F, "first 30 FPS profile changed");
     ok &= Check(ReadFloat(table, 24) == 30.0F, "second 30 FPS profile changed");
@@ -64,6 +70,9 @@ int main()
     std::array<std::uint8_t, nioh1fix::kFrameProfileSignature.size()> corrupt =
         nioh1fix::kFrameProfileSignature;
     corrupt[7] ^= 1;
+    ok &= Check(nioh1fix::InspectGameplayProfiles(corrupt, 120.0F) ==
+                    nioh1fix::ProfileState::invalid,
+                "corrupt table state was accepted");
     ok &= Check(!nioh1fix::PatchGameplayProfiles(corrupt, 120.0F),
                 "corrupt table was accepted");
     ok &= Check(!nioh1fix::PatchGameplayProfiles(

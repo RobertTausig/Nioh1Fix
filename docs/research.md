@@ -34,6 +34,12 @@ This is materially safer than removing the wait call alone. Raising the two
 60.0 values changes the limiter cadence and the engine's corresponding
 timestep source together. The two 30.0 rows are deliberately preserved.
 
+Because the ASI loader runs while SteamStub is still initializing the process,
+the plugin monitors the verified table for 30 seconds. If SteamStub restores
+the exact original table after the initial write, the plugin logs the event and
+reapplies the configured target. Any other change is treated as unexpected and
+stops the monitor without writing.
+
 Relevant RVAs in the supported build:
 
 - Frame profile table: `0x017AA8D8`

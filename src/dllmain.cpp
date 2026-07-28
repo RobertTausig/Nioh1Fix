@@ -21,6 +21,8 @@ constexpr DWORD kSupportedImageSize = 0x0306E000;
 constexpr int kDefaultTargetFps = 120;
 constexpr int kMinTargetFps = 60;
 constexpr int kMaxTargetFps = 360;
+constexpr DWORD kMonitorIntervalMs = 250;
+constexpr DWORD kMonitorDurationMs = 30'000;
 
 HMODULE gThisModule{};
 std::ofstream gLog;
@@ -182,12 +184,53 @@ bool ApplyFrameratePatch(std::uint8_t* table, int targetFps)
     return true;
 }
 
+bool MonitorFrameratePatch(std::uint8_t* table, int targetFps)
+{
+    const auto bytes = std::span<const std::uint8_t>(
+        table, nioh1fix::kFrameProfileSignature.size());
+    unsigned int reapplyCount{};
+
+    for (DWORD elapsed = kMonitorIntervalMs; elapsed <= kMonitorDurationMs;
+         elapsed += kMonitorIntervalMs) {
+        Sleep(kMonitorIntervalMs);
+
+        const auto state =
+            nioh1fix::InspectGameplayProfiles(bytes, static_cast<float>(targetFps));
+        if (state == nioh1fix::ProfileState::patched) {
+            continue;
+        }
+        if (state == nioh1fix::ProfileState::invalid) {
+            std::ostringstream message;
+            message << "Frame profile data changed unexpectedly after " << elapsed
+                    << " ms; monitoring stopped.";
+            Log(message.str());
+            return false;
+        }
+
+        std::ostringstream reset;
+        reset << "Frame profile reset to 60 FPS after " << elapsed
+              << " ms; reapplying the patch.";
+        Log(reset.str());
+        if (!ApplyFrameratePatch(table, targetFps)) {
+            Log("Failed to reapply the framerate patch.");
+            return false;
+        }
+        ++reapplyCount;
+    }
+
+    std::ostringstream result;
+    result << "Runtime monitor completed after " << kMonitorDurationMs
+           << " ms; profile state is patched, reapply_count=" << reapplyCount << '.';
+    Log(result.str());
+    return true;
+}
+
 DWORD WINAPI MainThread(void*)
 {
     const auto pluginPath = GetModulePath(gThisModule);
     const auto pluginDirectory = pluginPath.parent_path();
     gLog.open(pluginDirectory / L"Nioh1Fix.log", std::ios::trunc);
-    Log("Nioh1Fix v0.1.0");
+    Log("Nioh1Fix v0.2.0");
 
     const auto exeModule = GetModuleHandleW(nullptr);
     const auto exePath = GetModulePath(exeModule);
@@ -235,6 +278,12 @@ DWORD WINAPI MainThread(void*)
         return 0;
     }
 
+    {
+        std::ostringstream location;
+        location << "Frame profile table RVA=0x" << std::hex << std::uppercase
+                 << static_cast<std::size_t>(table - image.base);
+        Log(location.str());
+    }
     if (!ApplyFrameratePatch(table, targetFps)) {
         Log("Failed to apply the framerate patch.");
         return 0;
@@ -244,6 +293,7 @@ DWORD WINAPI MainThread(void*)
     success << "Patched both 60 FPS gameplay profiles to " << targetFps
             << " FPS; 30 FPS profiles were left unchanged.";
     Log(success.str());
+    MonitorFrameratePatch(table, targetFps);
     return 0;
 }
 } // namespace
