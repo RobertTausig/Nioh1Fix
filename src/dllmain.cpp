@@ -3,7 +3,6 @@
 #include <windows.h>
 
 #include <algorithm>
-#include <cmath>
 #include <cstdint>
 #include <cwctype>
 #include <cstring>
@@ -53,14 +52,11 @@ constexpr std::array<std::uint8_t, 44> kMainFrameLimiterSignature{
 constexpr std::array<std::uint8_t, 6> kMainFrameLimiterPatch{
     0xC3, 0x90, 0x90, 0x90, 0x90, 0x90,
 };
-constexpr std::size_t kAnimationDeltaOffset = 0x18322C;
-constexpr std::array<std::uint8_t, 32> kAnimationUpdateSignature{
-    0x48, 0x8B, 0xC4, 0x48, 0x89, 0x50, 0x10, 0x41,
-    0x56, 0x48, 0x81, 0xEC, 0xA0, 0x00, 0x00, 0x00,
-    0xF3, 0x0F, 0x10, 0x81, 0x38, 0x32, 0x18, 0x00,
-    0x4C, 0x8B, 0xF1, 0xF3, 0x0F, 0x5C, 0x82, 0x68,
+constexpr std::array<std::uint8_t, 24> kGameplayFpsAccessorSignature{
+    0x48, 0x63, 0x05, 0x91, 0x30, 0xD3, 0x00, 0x48,
+    0x8D, 0x0C, 0x40, 0x48, 0x8D, 0x05, 0x76, 0xD7,
+    0x92, 0x00, 0xF3, 0x0F, 0x10, 0x04, 0x88, 0xC3,
 };
-constexpr std::size_t kAnimationUpdatePatchSize = 16;
 
 HMODULE gThisModule{};
 std::uint8_t* gImageBase{};
@@ -69,15 +65,10 @@ volatile LONG gPresentCallCount{};
 volatile LONG gPresentWouldBlockCount{};
 volatile LONG gPresentFailureCount{};
 volatile LONG64 gPresentTotalTicks{};
+volatile LONG64 gPreviousPresentTick{};
+volatile LONG64 gLastPresentIntervalTicks{};
 LARGE_INTEGER gPerformanceFrequency{};
-using AnimationUpdateFunction = void (*)(void*, void*);
-AnimationUpdateFunction gOriginalAnimationUpdate{};
-volatile LONG64 gPreviousAnimationTick{};
-volatile LONG gAnimationUpdateCount{};
-volatile LONG gAnimationOriginalDeltaMilli{};
-volatile LONG gAnimationCorrectedDeltaMilli{};
-volatile LONG gAnimationScaleMilli{1000};
-volatile LONG gAnimationFrameMicroseconds{};
+int gConfiguredTargetFps{kDefaultTargetFps};
 
 void Log(const std::string& message)
 {
@@ -271,6 +262,13 @@ HRESULT AggressivePresent(void* renderer, const std::uint8_t* presentConfig)
     LARGE_INTEGER start{};
     LARGE_INTEGER end{};
     QueryPerformanceCounter(&start);
+    const LONG64 previousPresentTick =
+        InterlockedExchange64(&gPreviousPresentTick, start.QuadPart);
+    if (previousPresentTick > 0 && start.QuadPart > previousPresentTick) {
+        InterlockedExchange64(
+            &gLastPresentIntervalTicks,
+            start.QuadPart - previousPresentTick);
+    }
     const HRESULT result = present(swapChain, 0, flags);
     QueryPerformanceCounter(&end);
 
@@ -284,63 +282,26 @@ HRESULT AggressivePresent(void* renderer, const std::uint8_t* presentConfig)
     return result;
 }
 
-void CorrectAnimationUpdate(void* world, void* frameState)
+float GetGameplayReferenceFps()
 {
-    gOriginalAnimationUpdate(world, frameState);
-
-    LARGE_INTEGER now{};
-    QueryPerformanceCounter(&now);
-    const LONG64 previous =
-        InterlockedExchange64(&gPreviousAnimationTick, now.QuadPart);
-    auto* delta = reinterpret_cast<float*>(
-        static_cast<std::uint8_t*>(world) + kAnimationDeltaOffset);
-    const float originalDelta = *delta;
-
-    InterlockedIncrement(&gAnimationUpdateCount);
-    InterlockedExchange(
-        &gAnimationOriginalDeltaMilli,
-        static_cast<LONG>(originalDelta * 1000.0f));
-
-    if (previous <= 0 || gPerformanceFrequency.QuadPart <= 0 ||
-        !std::isfinite(originalDelta) || originalDelta == 0.0f) {
-        InterlockedExchange(
-            &gAnimationCorrectedDeltaMilli,
-            static_cast<LONG>(originalDelta * 1000.0f));
-        return;
-    }
-
-    const double elapsedSeconds =
-        static_cast<double>(now.QuadPart - previous) /
-        static_cast<double>(gPerformanceFrequency.QuadPart);
-    if (elapsedSeconds <= 0.0 || elapsedSeconds > 0.25) {
-        InterlockedExchange(
-            &gAnimationCorrectedDeltaMilli,
-            static_cast<LONG>(originalDelta * 1000.0f));
-        return;
-    }
-
     const LONG activeProfile =
         *reinterpret_cast<volatile LONG*>(
             gImageBase + kActiveFrameProfileRva);
-    const float referenceFps =
-        activeProfile == 1 || activeProfile == 2 ? 30.0f : 60.0f;
-    const float scale = std::clamp(
-        static_cast<float>(elapsedSeconds) * referenceFps, 0.05f, 4.0f);
-    const float correctedDelta = originalDelta * scale;
-    if (!std::isfinite(correctedDelta)) {
-        return;
+    if (activeProfile == 1 || activeProfile == 2) {
+        return 30.0f;
     }
 
-    *delta = correctedDelta;
-    InterlockedExchange(
-        &gAnimationCorrectedDeltaMilli,
-        static_cast<LONG>(correctedDelta * 1000.0f));
-    InterlockedExchange(
-        &gAnimationScaleMilli,
-        static_cast<LONG>(scale * 1000.0f));
-    InterlockedExchange(
-        &gAnimationFrameMicroseconds,
-        static_cast<LONG>(elapsedSeconds * 1'000'000.0));
+    const LONG64 intervalTicks = InterlockedCompareExchange64(
+        &gLastPresentIntervalTicks, 0, 0);
+    if (intervalTicks <= 0 || gPerformanceFrequency.QuadPart <= 0) {
+        return static_cast<float>(gConfiguredTargetFps * 2);
+    }
+
+    const double measuredFps =
+        static_cast<double>(gPerformanceFrequency.QuadPart) /
+        static_cast<double>(intervalTicks);
+    return static_cast<float>(
+        std::clamp(measuredFps * 2.0, 30.0, 2000.0));
 }
 
 bool PatchCode(std::uint8_t* address,
@@ -382,85 +343,39 @@ bool PatchCode(std::uint8_t* address,
     return true;
 }
 
-struct AnimationPatch
+struct GameplayFpsPatch
 {
     std::uint8_t* address{};
-    std::array<std::uint8_t, kAnimationUpdatePatchSize> bytes{};
+    std::array<std::uint8_t, kGameplayFpsAccessorSignature.size()> bytes{};
 };
 
-AnimationPatch PatchAnimationUpdate(std::uint8_t* address)
+GameplayFpsPatch PatchGameplayFpsAccessor(std::uint8_t* address)
 {
-    AnimationPatch result{};
+    GameplayFpsPatch result{};
     if (std::memcmp(address,
-                    kAnimationUpdateSignature.data(),
-                    kAnimationUpdateSignature.size()) != 0) {
-        Log("Animation update verification failed.");
+                    kGameplayFpsAccessorSignature.data(),
+                    kGameplayFpsAccessorSignature.size()) != 0) {
+        Log("Gameplay FPS accessor verification failed.");
         return result;
     }
-
-    constexpr std::size_t trampolineSize =
-        kAnimationUpdatePatchSize + 13;
-    auto* trampoline = static_cast<std::uint8_t*>(VirtualAlloc(
-        nullptr,
-        trampolineSize,
-        MEM_COMMIT | MEM_RESERVE,
-        PAGE_READWRITE));
-    if (!trampoline) {
-        Log("VirtualAlloc failed while creating the animation trampoline.");
-        return result;
-    }
-
-    std::array<std::uint8_t, trampolineSize> trampolineBytes{};
-    std::memcpy(trampolineBytes.data(),
-                kAnimationUpdateSignature.data(),
-                kAnimationUpdatePatchSize);
-    trampolineBytes[kAnimationUpdatePatchSize] = 0x49;
-    trampolineBytes[kAnimationUpdatePatchSize + 1] = 0xBB;
-    const auto continuationAddress =
-        reinterpret_cast<std::uintptr_t>(
-            address + kAnimationUpdatePatchSize);
-    std::memcpy(trampolineBytes.data() + kAnimationUpdatePatchSize + 2,
-                &continuationAddress,
-                sizeof(continuationAddress));
-    trampolineBytes[kAnimationUpdatePatchSize + 10] = 0x41;
-    trampolineBytes[kAnimationUpdatePatchSize + 11] = 0xFF;
-    trampolineBytes[kAnimationUpdatePatchSize + 12] = 0xE3;
-    std::memcpy(
-        trampoline, trampolineBytes.data(), trampolineBytes.size());
-
-    DWORD oldTrampolineProtection{};
-    if (!VirtualProtect(trampoline,
-                        trampolineSize,
-                        PAGE_EXECUTE_READ,
-                        &oldTrampolineProtection)) {
-        VirtualFree(trampoline, 0, MEM_RELEASE);
-        Log("VirtualProtect failed while enabling the animation trampoline.");
-        return result;
-    }
-    FlushInstructionCache(
-        GetCurrentProcess(), trampoline, trampolineSize);
 
     result.address = address;
     result.bytes.fill(0x90);
     result.bytes[0] = 0x48;
     result.bytes[1] = 0xB8;
     const auto helperAddress =
-        reinterpret_cast<std::uintptr_t>(&CorrectAnimationUpdate);
+        reinterpret_cast<std::uintptr_t>(&GetGameplayReferenceFps);
     std::memcpy(
         result.bytes.data() + 2, &helperAddress, sizeof(helperAddress));
     result.bytes[10] = 0xFF;
     result.bytes[11] = 0xE0;
 
-    gOriginalAnimationUpdate =
-        reinterpret_cast<AnimationUpdateFunction>(trampoline);
     DWORD oldProtection{};
     if (!VirtualProtect(address,
                         result.bytes.size(),
                         PAGE_EXECUTE_READWRITE,
                         &oldProtection)) {
-        gOriginalAnimationUpdate = nullptr;
-        VirtualFree(trampoline, 0, MEM_RELEASE);
-        Log("VirtualProtect failed before patching the animation update.");
+        Log("VirtualProtect failed before patching the gameplay FPS accessor.");
         return {};
     }
 
@@ -471,7 +386,8 @@ AnimationPatch PatchAnimationUpdate(std::uint8_t* address)
     DWORD ignored{};
     if (!VirtualProtect(
             address, result.bytes.size(), oldProtection, &ignored)) {
-        Log("Animation update was patched, but restoring page protection failed.");
+        Log("Gameplay FPS accessor was patched, but restoring page protection "
+            "failed.");
         return {};
     }
     return result;
@@ -591,40 +507,42 @@ bool MonitorRuntimePatches(const PeImage& image,
         table, nioh1fix::kFrameProfileSignature.size());
     unsigned int reapplyCount{};
     PresentPatch presentPatch{};
-    AnimationPatch animationPatch{};
+    GameplayFpsPatch gameplayFpsPatch{};
     std::uint8_t* mainFrameLimiterAddress{};
 
     for (DWORD elapsed = kMonitorIntervalMs; elapsed <= kMonitorDurationMs;
          elapsed += kMonitorIntervalMs) {
         Sleep(kMonitorIntervalMs);
 
-        if (!animationPatch.address) {
-            const auto animationUpdate = FindCodePattern(
+        if (!gameplayFpsPatch.address) {
+            const auto gameplayFpsAccessor = FindCodePattern(
                 image,
-                std::span<const std::uint8_t>(kAnimationUpdateSignature));
-            if (animationUpdate.count > 1) {
-                Log("The animation-update signature was ambiguous.");
+                std::span<const std::uint8_t>(
+                    kGameplayFpsAccessorSignature));
+            if (gameplayFpsAccessor.count > 1) {
+                Log("The gameplay FPS accessor signature was ambiguous.");
                 return false;
             }
-            if (animationUpdate.count == 1) {
-                animationPatch =
-                    PatchAnimationUpdate(animationUpdate.address);
-                if (!animationPatch.address) {
+            if (gameplayFpsAccessor.count == 1) {
+                gameplayFpsPatch = PatchGameplayFpsAccessor(
+                    gameplayFpsAccessor.address);
+                if (!gameplayFpsPatch.address) {
                     return false;
                 }
 
                 std::ostringstream message;
-                message << "Enabled frame-time animation correction at RVA=0x"
+                message << "Separated gameplay timing from the render target at "
+                           "RVA=0x"
                         << std::hex << std::uppercase
                         << static_cast<std::size_t>(
-                               animationPatch.address - image.base)
+                               gameplayFpsPatch.address - image.base)
                         << '.';
                 Log(message.str());
             }
-        } else if (std::memcmp(animationPatch.address,
-                               animationPatch.bytes.data(),
-                               animationPatch.bytes.size()) != 0) {
-            Log("The animation update changed unexpectedly after patching.");
+        } else if (std::memcmp(gameplayFpsPatch.address,
+                               gameplayFpsPatch.bytes.data(),
+                               gameplayFpsPatch.bytes.size()) != 0) {
+            Log("The gameplay FPS accessor changed unexpectedly after patching.");
             return false;
         }
 
@@ -716,15 +634,8 @@ bool MonitorRuntimePatches(const PeImage& image,
                         << ", present_calls=" << gPresentCallCount
                         << ", present_would_block=" << gPresentWouldBlockCount
                         << ", present_failures=" << gPresentFailureCount
-                        << ", animation_updates=" << gAnimationUpdateCount
-                        << ", animation_original_x1000="
-                        << gAnimationOriginalDeltaMilli
-                        << ", animation_corrected_x1000="
-                        << gAnimationCorrectedDeltaMilli
-                        << ", animation_scale_x1000="
-                        << gAnimationScaleMilli
-                        << ", animation_frame_us="
-                        << gAnimationFrameMicroseconds;
+                        << ", gameplay_reference_fps="
+                        << GetGameplayReferenceFps();
             if (gPresentCallCount > 0 && gPerformanceFrequency.QuadPart > 0) {
                 const double averagePresentMicroseconds =
                     static_cast<double>(gPresentTotalTicks) * 1'000'000.0 /
@@ -769,13 +680,13 @@ bool MonitorRuntimePatches(const PeImage& image,
            << ", engine_synchronization=original"
            << ", main_frame_limiter="
            << (mainFrameLimiterAddress ? "disabled" : "not_found")
-           << ", animation_timestep="
-           << (animationPatch.address ? "normalized" : "not_found")
+           << ", gameplay_timing="
+           << (gameplayFpsPatch.address ? "dynamic_compensation" : "not_found")
            << '.';
     Log(result.str());
     return presentPatch.address != nullptr &&
            mainFrameLimiterAddress != nullptr &&
-           animationPatch.address != nullptr;
+           gameplayFpsPatch.address != nullptr;
 }
 
 DWORD WINAPI MainThread(void*)
@@ -783,7 +694,7 @@ DWORD WINAPI MainThread(void*)
     const auto pluginPath = GetModulePath(gThisModule);
     const auto pluginDirectory = pluginPath.parent_path();
     gLog.open(pluginDirectory / L"Nioh1Fix.log", std::ios::trunc);
-    Log("Nioh1Fix v1.1.1");
+    Log("Nioh1Fix v1.4.0");
     QueryPerformanceFrequency(&gPerformanceFrequency);
 
     const auto exeModule = GetModuleHandleW(nullptr);
@@ -818,6 +729,7 @@ DWORD WINAPI MainThread(void*)
         ReadIniBool(iniPath, L"Framerate", L"Enabled", true);
     const int targetFps = GetPrivateProfileIntW(
         L"Framerate", L"TargetFPS", kDefaultTargetFps, iniPath.c_str());
+    gConfiguredTargetFps = targetFps;
     if (!enabled) {
         Log("Framerate patch is disabled in Nioh1Fix.ini.");
         return 0;
