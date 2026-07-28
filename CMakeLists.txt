@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(Nioh1Fix VERSION 0.9.0 LANGUAGES CXX)
+project(Nioh1Fix VERSION 1.1.0 LANGUAGES CXX)
 
 include(CTest)
 

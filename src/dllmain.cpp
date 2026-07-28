@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cwctype>
 #include <cstring>
@@ -42,27 +43,6 @@ constexpr UINT kDxgiPresentDoNotWait = 0x8;
 constexpr HRESULT kDxgiErrorWasStillDrawing =
     static_cast<HRESULT>(0x887A000AUL);
 constexpr std::size_t kRendererSwapChainOffset = 0x2FB0;
-constexpr std::array<std::uint8_t, 10> kPrimaryFrameWaitSignature{
-    0xF3, 0x48, 0x0F, 0x2C, 0xD0, 0xE8, 0xBB, 0x89, 0x53, 0x00,
-};
-constexpr std::array<std::uint8_t, 10> kSecondaryFrameWaitSignature{
-    0xF3, 0x48, 0x0F, 0x2C, 0xD0, 0xE8, 0x0C, 0x86, 0x53, 0x00,
-};
-constexpr std::array<std::uint8_t, 10> kFrameWaitBypassPatch{
-    0xB0, 0x01, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
-};
-constexpr std::array<std::uint8_t, 11> kWorkerConsumerWaitSignature{
-    0x48, 0x8B, 0x4E, 0x40, 0x33, 0xD2, 0xE8, 0x92, 0x65, 0x53, 0x00,
-};
-constexpr std::array<std::uint8_t, 11> kWorkerConsumerWaitPatch{
-    0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
-};
-constexpr std::array<std::uint8_t, 9> kWorkerThrottleSignature{
-    0x48, 0x3B, 0xCF, 0x0F, 0x8D, 0xA3, 0x00, 0x00, 0x00,
-};
-constexpr std::array<std::uint8_t, 9> kWorkerThrottlePatch{
-    0x48, 0x3B, 0xCF, 0xE9, 0xA4, 0x00, 0x00, 0x00, 0x90,
-};
 constexpr std::array<std::uint8_t, 44> kMainFrameLimiterSignature{
     0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10,
     0x48, 0x89, 0x74, 0x24, 0x18, 0x48, 0x89, 0x7C, 0x24, 0x20,
@@ -73,21 +53,31 @@ constexpr std::array<std::uint8_t, 44> kMainFrameLimiterSignature{
 constexpr std::array<std::uint8_t, 6> kMainFrameLimiterPatch{
     0xC3, 0x90, 0x90, 0x90, 0x90, 0x90,
 };
-constexpr std::array<std::uint8_t, 18> kFramePacerSignature{
-    0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0xE8, 0x55, 0x4D,
-    0x6A, 0xFF, 0x48, 0x63, 0x0D, 0xB6, 0x31, 0xD3, 0x00,
+constexpr std::size_t kAnimationDeltaOffset = 0x18322C;
+constexpr std::array<std::uint8_t, 32> kAnimationUpdateSignature{
+    0x48, 0x8B, 0xC4, 0x48, 0x89, 0x50, 0x10, 0x41,
+    0x56, 0x48, 0x81, 0xEC, 0xA0, 0x00, 0x00, 0x00,
+    0xF3, 0x0F, 0x10, 0x81, 0x38, 0x32, 0x18, 0x00,
+    0x4C, 0x8B, 0xF1, 0xF3, 0x0F, 0x5C, 0x82, 0x68,
 };
-constexpr std::array<std::uint8_t, 6> kFramePacerPatch{
-    0xC3, 0x90, 0x90, 0x90, 0x90, 0x90,
-};
+constexpr std::size_t kAnimationUpdatePatchSize = 16;
 
 HMODULE gThisModule{};
+std::uint8_t* gImageBase{};
 std::ofstream gLog;
 volatile LONG gPresentCallCount{};
 volatile LONG gPresentWouldBlockCount{};
 volatile LONG gPresentFailureCount{};
 volatile LONG64 gPresentTotalTicks{};
 LARGE_INTEGER gPerformanceFrequency{};
+using AnimationUpdateFunction = void (*)(void*, void*);
+AnimationUpdateFunction gOriginalAnimationUpdate{};
+volatile LONG64 gPreviousAnimationTick{};
+volatile LONG gAnimationUpdateCount{};
+volatile LONG gAnimationOriginalDeltaMilli{};
+volatile LONG gAnimationCorrectedDeltaMilli{};
+volatile LONG gAnimationScaleMilli{1000};
+volatile LONG gAnimationFrameMicroseconds{};
 
 void Log(const std::string& message)
 {
@@ -294,6 +284,65 @@ HRESULT AggressivePresent(void* renderer, const std::uint8_t* presentConfig)
     return result;
 }
 
+void CorrectAnimationUpdate(void* world, void* frameState)
+{
+    gOriginalAnimationUpdate(world, frameState);
+
+    LARGE_INTEGER now{};
+    QueryPerformanceCounter(&now);
+    const LONG64 previous =
+        InterlockedExchange64(&gPreviousAnimationTick, now.QuadPart);
+    auto* delta = reinterpret_cast<float*>(
+        static_cast<std::uint8_t*>(world) + kAnimationDeltaOffset);
+    const float originalDelta = *delta;
+
+    InterlockedIncrement(&gAnimationUpdateCount);
+    InterlockedExchange(
+        &gAnimationOriginalDeltaMilli,
+        static_cast<LONG>(originalDelta * 1000.0f));
+
+    if (previous <= 0 || gPerformanceFrequency.QuadPart <= 0 ||
+        !std::isfinite(originalDelta) || originalDelta == 0.0f) {
+        InterlockedExchange(
+            &gAnimationCorrectedDeltaMilli,
+            static_cast<LONG>(originalDelta * 1000.0f));
+        return;
+    }
+
+    const double elapsedSeconds =
+        static_cast<double>(now.QuadPart - previous) /
+        static_cast<double>(gPerformanceFrequency.QuadPart);
+    if (elapsedSeconds <= 0.0 || elapsedSeconds > 0.25) {
+        InterlockedExchange(
+            &gAnimationCorrectedDeltaMilli,
+            static_cast<LONG>(originalDelta * 1000.0f));
+        return;
+    }
+
+    const LONG activeProfile =
+        *reinterpret_cast<volatile LONG*>(
+            gImageBase + kActiveFrameProfileRva);
+    const float referenceFps =
+        activeProfile == 1 || activeProfile == 2 ? 30.0f : 60.0f;
+    const float scale = std::clamp(
+        static_cast<float>(elapsedSeconds) * referenceFps, 0.05f, 4.0f);
+    const float correctedDelta = originalDelta * scale;
+    if (!std::isfinite(correctedDelta)) {
+        return;
+    }
+
+    *delta = correctedDelta;
+    InterlockedExchange(
+        &gAnimationCorrectedDeltaMilli,
+        static_cast<LONG>(correctedDelta * 1000.0f));
+    InterlockedExchange(
+        &gAnimationScaleMilli,
+        static_cast<LONG>(scale * 1000.0f));
+    InterlockedExchange(
+        &gAnimationFrameMicroseconds,
+        static_cast<LONG>(elapsedSeconds * 1'000'000.0));
+}
+
 bool PatchCode(std::uint8_t* address,
                std::span<const std::uint8_t> original,
                std::span<const std::uint8_t> replacement,
@@ -333,14 +382,98 @@ bool PatchCode(std::uint8_t* address,
     return true;
 }
 
-bool DisableFramePacer(std::uint8_t* address)
+struct AnimationPatch
 {
-    return PatchCode(
-        address,
-        std::span<const std::uint8_t>(
-            kFramePacerSignature.data(), kFramePacerPatch.size()),
-        std::span<const std::uint8_t>(kFramePacerPatch),
-        "the frame pacer");
+    std::uint8_t* address{};
+    std::array<std::uint8_t, kAnimationUpdatePatchSize> bytes{};
+};
+
+AnimationPatch PatchAnimationUpdate(std::uint8_t* address)
+{
+    AnimationPatch result{};
+    if (std::memcmp(address,
+                    kAnimationUpdateSignature.data(),
+                    kAnimationUpdateSignature.size()) != 0) {
+        Log("Animation update verification failed.");
+        return result;
+    }
+
+    constexpr std::size_t trampolineSize =
+        kAnimationUpdatePatchSize + 12;
+    auto* trampoline = static_cast<std::uint8_t*>(VirtualAlloc(
+        nullptr,
+        trampolineSize,
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_READWRITE));
+    if (!trampoline) {
+        Log("VirtualAlloc failed while creating the animation trampoline.");
+        return result;
+    }
+
+    std::array<std::uint8_t, trampolineSize> trampolineBytes{};
+    std::memcpy(trampolineBytes.data(),
+                kAnimationUpdateSignature.data(),
+                kAnimationUpdatePatchSize);
+    trampolineBytes[kAnimationUpdatePatchSize] = 0x48;
+    trampolineBytes[kAnimationUpdatePatchSize + 1] = 0xB8;
+    const auto continuationAddress =
+        reinterpret_cast<std::uintptr_t>(
+            address + kAnimationUpdatePatchSize);
+    std::memcpy(trampolineBytes.data() + kAnimationUpdatePatchSize + 2,
+                &continuationAddress,
+                sizeof(continuationAddress));
+    trampolineBytes[kAnimationUpdatePatchSize + 10] = 0xFF;
+    trampolineBytes[kAnimationUpdatePatchSize + 11] = 0xE0;
+    std::memcpy(
+        trampoline, trampolineBytes.data(), trampolineBytes.size());
+
+    DWORD oldTrampolineProtection{};
+    if (!VirtualProtect(trampoline,
+                        trampolineSize,
+                        PAGE_EXECUTE_READ,
+                        &oldTrampolineProtection)) {
+        VirtualFree(trampoline, 0, MEM_RELEASE);
+        Log("VirtualProtect failed while enabling the animation trampoline.");
+        return result;
+    }
+    FlushInstructionCache(
+        GetCurrentProcess(), trampoline, trampolineSize);
+
+    result.address = address;
+    result.bytes.fill(0x90);
+    result.bytes[0] = 0x48;
+    result.bytes[1] = 0xB8;
+    const auto helperAddress =
+        reinterpret_cast<std::uintptr_t>(&CorrectAnimationUpdate);
+    std::memcpy(
+        result.bytes.data() + 2, &helperAddress, sizeof(helperAddress));
+    result.bytes[10] = 0xFF;
+    result.bytes[11] = 0xE0;
+
+    gOriginalAnimationUpdate =
+        reinterpret_cast<AnimationUpdateFunction>(trampoline);
+    DWORD oldProtection{};
+    if (!VirtualProtect(address,
+                        result.bytes.size(),
+                        PAGE_EXECUTE_READWRITE,
+                        &oldProtection)) {
+        gOriginalAnimationUpdate = nullptr;
+        VirtualFree(trampoline, 0, MEM_RELEASE);
+        Log("VirtualProtect failed before patching the animation update.");
+        return {};
+    }
+
+    std::memcpy(address, result.bytes.data(), result.bytes.size());
+    FlushInstructionCache(
+        GetCurrentProcess(), address, result.bytes.size());
+
+    DWORD ignored{};
+    if (!VirtualProtect(
+            address, result.bytes.size(), oldProtection, &ignored)) {
+        Log("Animation update was patched, but restoring page protection failed.");
+        return {};
+    }
+    return result;
 }
 
 struct PresentPatch
@@ -457,156 +590,40 @@ bool MonitorRuntimePatches(const PeImage& image,
         table, nioh1fix::kFrameProfileSignature.size());
     unsigned int reapplyCount{};
     PresentPatch presentPatch{};
-    std::array<std::uint8_t*, 2> frameWaitAddresses{};
-    std::uint8_t* framePacerAddress{};
-    std::uint8_t* workerConsumerWaitAddress{};
-    std::uint8_t* workerThrottleAddress{};
+    AnimationPatch animationPatch{};
     std::uint8_t* mainFrameLimiterAddress{};
 
     for (DWORD elapsed = kMonitorIntervalMs; elapsed <= kMonitorDurationMs;
          elapsed += kMonitorIntervalMs) {
         Sleep(kMonitorIntervalMs);
 
-        if (!framePacerAddress) {
-            const auto framePacer = FindCodePattern(
-                image, std::span<const std::uint8_t>(kFramePacerSignature));
-            if (framePacer.count > 1) {
-                Log("Frame-pacer signature was ambiguous.");
-                return false;
-            }
-            if (framePacer.count == 1) {
-                framePacerAddress = framePacer.address;
-                if (!DisableFramePacer(framePacerAddress)) {
-                    return false;
-                }
-
-                std::ostringstream message;
-                message << "Disabled the Katana frame pacer at RVA=0x"
-                        << std::hex << std::uppercase
-                        << static_cast<std::size_t>(
-                               framePacerAddress - image.base)
-                        << '.';
-                Log(message.str());
-            }
-        } else if (std::memcmp(framePacerAddress,
-                               kFramePacerPatch.data(),
-                               kFramePacerPatch.size()) != 0) {
-            Log("Frame pacer changed unexpectedly after patching.");
-            return false;
-        }
-
-        if (!frameWaitAddresses[0]) {
-            const auto primary = FindCodePattern(
+        if (!animationPatch.address) {
+            const auto animationUpdate = FindCodePattern(
                 image,
-                std::span<const std::uint8_t>(kPrimaryFrameWaitSignature));
-            const auto secondary = FindCodePattern(
-                image,
-                std::span<const std::uint8_t>(kSecondaryFrameWaitSignature));
-            if (primary.count > 1 || secondary.count > 1) {
-                Log("A frame-ready wait signature was ambiguous.");
+                std::span<const std::uint8_t>(kAnimationUpdateSignature));
+            if (animationUpdate.count > 1) {
+                Log("The animation-update signature was ambiguous.");
                 return false;
             }
-            if (primary.count == 1 && secondary.count == 1) {
-                frameWaitAddresses = {primary.address, secondary.address};
-                if (!PatchCode(
-                        frameWaitAddresses[0],
-                        std::span<const std::uint8_t>(kPrimaryFrameWaitSignature),
-                        std::span<const std::uint8_t>(kFrameWaitBypassPatch),
-                        "the primary frame-ready wait") ||
-                    !PatchCode(
-                        frameWaitAddresses[1],
-                        std::span<const std::uint8_t>(kSecondaryFrameWaitSignature),
-                        std::span<const std::uint8_t>(kFrameWaitBypassPatch),
-                        "the secondary frame-ready wait")) {
+            if (animationUpdate.count == 1) {
+                animationPatch =
+                    PatchAnimationUpdate(animationUpdate.address);
+                if (!animationPatch.address) {
                     return false;
                 }
 
                 std::ostringstream message;
-                message << "Bypassed both frame-ready waits at RVAs 0x"
+                message << "Enabled frame-time animation correction at RVA=0x"
                         << std::hex << std::uppercase
                         << static_cast<std::size_t>(
-                               frameWaitAddresses[0] - image.base)
-                        << " and 0x"
-                        << static_cast<std::size_t>(
-                               frameWaitAddresses[1] - image.base)
+                               animationPatch.address - image.base)
                         << '.';
                 Log(message.str());
             }
-        } else if (std::memcmp(frameWaitAddresses[0],
-                               kFrameWaitBypassPatch.data(),
-                               kFrameWaitBypassPatch.size()) != 0 ||
-                   std::memcmp(frameWaitAddresses[1],
-                               kFrameWaitBypassPatch.data(),
-                               kFrameWaitBypassPatch.size()) != 0) {
-            Log("A frame-ready wait changed unexpectedly after patching.");
-            return false;
-        }
-
-        if (!workerConsumerWaitAddress) {
-            const auto workerConsumerWait = FindCodePattern(
-                image,
-                std::span<const std::uint8_t>(kWorkerConsumerWaitSignature));
-            if (workerConsumerWait.count > 1) {
-                Log("The render-worker consumer-wait signature was ambiguous.");
-                return false;
-            }
-            if (workerConsumerWait.count == 1) {
-                workerConsumerWaitAddress = workerConsumerWait.address;
-                if (!PatchCode(
-                        workerConsumerWaitAddress,
-                        std::span<const std::uint8_t>(
-                            kWorkerConsumerWaitSignature),
-                        std::span<const std::uint8_t>(
-                            kWorkerConsumerWaitPatch),
-                        "the render-worker consumer wait")) {
-                    return false;
-                }
-
-                std::ostringstream message;
-                message << "Bypassed the render-worker consumer wait at RVA=0x"
-                        << std::hex << std::uppercase
-                        << static_cast<std::size_t>(
-                               workerConsumerWaitAddress - image.base)
-                        << '.';
-                Log(message.str());
-            }
-        } else if (std::memcmp(workerConsumerWaitAddress,
-                               kWorkerConsumerWaitPatch.data(),
-                               kWorkerConsumerWaitPatch.size()) != 0) {
-            Log("The render-worker consumer wait changed unexpectedly.");
-            return false;
-        }
-
-        if (!workerThrottleAddress) {
-            const auto workerThrottle = FindCodePattern(
-                image, std::span<const std::uint8_t>(kWorkerThrottleSignature));
-            if (workerThrottle.count > 1) {
-                Log("The render-worker throttle signature was ambiguous.");
-                return false;
-            }
-            if (workerThrottle.count == 1) {
-                workerThrottleAddress = workerThrottle.address;
-                if (!PatchCode(
-                        workerThrottleAddress,
-                        std::span<const std::uint8_t>(kWorkerThrottleSignature),
-                        std::span<const std::uint8_t>(kWorkerThrottlePatch),
-                        "the render-worker four-frame throttle")) {
-                    return false;
-                }
-
-                std::ostringstream message;
-                message << "Bypassed the render-worker four-frame throttle at "
-                           "RVA=0x"
-                        << std::hex << std::uppercase
-                        << static_cast<std::size_t>(
-                               workerThrottleAddress - image.base)
-                        << '.';
-                Log(message.str());
-            }
-        } else if (std::memcmp(workerThrottleAddress,
-                               kWorkerThrottlePatch.data(),
-                               kWorkerThrottlePatch.size()) != 0) {
-            Log("The render-worker throttle changed unexpectedly.");
+        } else if (std::memcmp(animationPatch.address,
+                               animationPatch.bytes.data(),
+                               animationPatch.bytes.size()) != 0) {
+            Log("The animation update changed unexpectedly after patching.");
             return false;
         }
 
@@ -697,7 +714,16 @@ bool MonitorRuntimePatches(const PeImage& image,
                         << ", current_frame_count=" << currentFrameCount
                         << ", present_calls=" << gPresentCallCount
                         << ", present_would_block=" << gPresentWouldBlockCount
-                        << ", present_failures=" << gPresentFailureCount;
+                        << ", present_failures=" << gPresentFailureCount
+                        << ", animation_updates=" << gAnimationUpdateCount
+                        << ", animation_original_x1000="
+                        << gAnimationOriginalDeltaMilli
+                        << ", animation_corrected_x1000="
+                        << gAnimationCorrectedDeltaMilli
+                        << ", animation_scale_x1000="
+                        << gAnimationScaleMilli
+                        << ", animation_frame_us="
+                        << gAnimationFrameMicroseconds;
             if (gPresentCallCount > 0 && gPerformanceFrequency.QuadPart > 0) {
                 const double averagePresentMicroseconds =
                     static_cast<double>(gPresentTotalTicks) * 1'000'000.0 /
@@ -739,24 +765,16 @@ bool MonitorRuntimePatches(const PeImage& image,
            << " ms; profile state is patched, reapply_count=" << reapplyCount
            << ", present_dispatch="
            << (presentPatch.address ? "non_blocking" : "not_found")
-           << ", frame_waits="
-           << (frameWaitAddresses[0] ? "bypassed" : "not_found")
-           << ", frame_pacer="
-           << (framePacerAddress ? "disabled" : "not_found")
-           << ", worker_consumer_wait="
-           << (workerConsumerWaitAddress ? "bypassed" : "not_found")
-           << ", worker_throttle="
-           << (workerThrottleAddress ? "bypassed" : "not_found")
+           << ", engine_synchronization=original"
            << ", main_frame_limiter="
            << (mainFrameLimiterAddress ? "disabled" : "not_found")
+           << ", animation_timestep="
+           << (animationPatch.address ? "normalized" : "not_found")
            << '.';
     Log(result.str());
     return presentPatch.address != nullptr &&
-           frameWaitAddresses[0] != nullptr &&
-           framePacerAddress != nullptr &&
-           workerConsumerWaitAddress != nullptr &&
-           workerThrottleAddress != nullptr &&
-           mainFrameLimiterAddress != nullptr;
+           mainFrameLimiterAddress != nullptr &&
+           animationPatch.address != nullptr;
 }
 
 DWORD WINAPI MainThread(void*)
@@ -764,7 +782,7 @@ DWORD WINAPI MainThread(void*)
     const auto pluginPath = GetModulePath(gThisModule);
     const auto pluginDirectory = pluginPath.parent_path();
     gLog.open(pluginDirectory / L"Nioh1Fix.log", std::ios::trunc);
-    Log("Nioh1Fix v0.9.0");
+    Log("Nioh1Fix v1.1.0");
     QueryPerformanceFrequency(&gPerformanceFrequency);
 
     const auto exeModule = GetModuleHandleW(nullptr);
@@ -779,6 +797,7 @@ DWORD WINAPI MainThread(void*)
         Log("Could not validate the executable PE headers. No changes were made.");
         return 0;
     }
+    gImageBase = image.base;
 
     const auto timestamp = image.headers->FileHeader.TimeDateStamp;
     const auto imageSize = image.headers->OptionalHeader.SizeOfImage;
