@@ -40,6 +40,14 @@ the exact original table after the initial write, the plugin logs the event and
 reapplies the configured target. Any other change is treated as unexpected and
 stops the monitor without writing.
 
+Nioh also initializes a renderer field at offset `0x2F8C` to one and passes it
+as `SyncInterval` to `IDXGISwapChain::Present`. The settings code can restore
+that value, and Nioh exposes no VSync toggle. After SteamStub decrypts the code
+section, the plugin finds the unique complete Present block and replaces the
+six-byte sync-interval load with `xor edx, edx` and four NOP bytes. This removes
+the separate presentation cap while the frame profile retains the configured
+target.
+
 Relevant RVAs in the supported build:
 
 - Frame profile table: `0x017AA8D8`
@@ -48,6 +56,7 @@ Relevant RVAs in the supported build:
 - Frame loop profile reads: `0x00A9D8AF` and `0x00A9DC77`
 - QPC wait helper: `0x00A9C2D0`
 - Wait call sites: `0x00A9DA39` and `0x00A9DE19`
+- Present sync-interval load: `0x002B2231`
 
 RVAs are documentation only. The plugin locates the full table signature,
 requires exactly one match in initialized readable data, verifies the PE

@@ -71,7 +71,7 @@ Build and package the ASI on Linux with a pinned portable LLVM-MinGW toolchain:
 scripts/build-linux.sh
 ```
 
-This creates `dist/Nioh1Fix-0.2.0.zip` without installing system packages.
+This creates `dist/Nioh1Fix-0.3.0.zip` without installing system packages.
 
 Alternatively, build with Visual Studio 2022:
 

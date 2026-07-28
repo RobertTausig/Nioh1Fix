@@ -23,6 +23,20 @@ constexpr int kMinTargetFps = 60;
 constexpr int kMaxTargetFps = 360;
 constexpr DWORD kMonitorIntervalMs = 250;
 constexpr DWORD kMonitorDurationMs = 30'000;
+constexpr std::array<std::uint8_t, 52> kPresentSignature{
+    0x80, 0x7D, 0x00, 0x00, 0x74, 0x18, 0x48, 0x8B, 0x4D, 0x08, 0x33, 0xD2,
+    0x48, 0x85, 0xC9, 0x75, 0x1A, 0x48, 0x8B, 0x8F, 0xB0, 0x2F, 0x00, 0x00,
+    0x44, 0x8D, 0x42, 0x01, 0xEB, 0x10, 0x48, 0x8B, 0x8F, 0xB0, 0x2F, 0x00,
+    0x00, 0x8B, 0x97, 0x8C, 0x2F, 0x00, 0x00, 0x45, 0x33, 0xC0, 0x48, 0x8B,
+    0x01, 0xFF, 0x50, 0x40,
+};
+constexpr std::size_t kPresentSyncLoadOffset = 0x25;
+constexpr std::array<std::uint8_t, 6> kPresentSyncLoad{
+    0x8B, 0x97, 0x8C, 0x2F, 0x00, 0x00,
+};
+constexpr std::array<std::uint8_t, 6> kPresentSyncPatch{
+    0x33, 0xD2, 0x90, 0x90, 0x90, 0x90,
+};
 
 HMODULE gThisModule{};
 std::ofstream gLog;
@@ -156,6 +170,73 @@ std::uint8_t* FindUniqueFrameProfileTable(const PeImage& image)
     return match;
 }
 
+struct PatternSearchResult
+{
+    std::uint8_t* address{};
+    std::size_t count{};
+};
+
+PatternSearchResult FindCodePattern(const PeImage& image,
+                                    std::span<const std::uint8_t> pattern)
+{
+    PatternSearchResult result{};
+    auto* section = IMAGE_FIRST_SECTION(image.headers);
+    const auto imageSize = image.headers->OptionalHeader.SizeOfImage;
+
+    for (WORD index = 0; index < image.headers->FileHeader.NumberOfSections;
+         ++index, ++section) {
+        const DWORD required = IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE;
+        if ((section->Characteristics & required) != required) {
+            continue;
+        }
+
+        const std::size_t rva = section->VirtualAddress;
+        const std::size_t size = section->Misc.VirtualSize;
+        if (rva >= imageSize || size > imageSize - rva || size < pattern.size()) {
+            continue;
+        }
+
+        auto* bytes = image.base + rva;
+        const auto lastStart = size - pattern.size();
+        for (std::size_t offset = 0; offset <= lastStart; ++offset) {
+            if (std::memcmp(bytes + offset, pattern.data(), pattern.size()) != 0) {
+                continue;
+            }
+            result.address = bytes + offset;
+            ++result.count;
+            if (result.count > 1) {
+                return result;
+            }
+        }
+    }
+    return result;
+}
+
+bool PatchPresentSyncInterval(std::uint8_t* address)
+{
+    if (std::memcmp(address, kPresentSyncLoad.data(), kPresentSyncLoad.size()) != 0) {
+        Log("Present sync-interval instruction verification failed.");
+        return false;
+    }
+
+    DWORD oldProtection{};
+    if (!VirtualProtect(
+            address, kPresentSyncPatch.size(), PAGE_EXECUTE_READWRITE, &oldProtection)) {
+        Log("VirtualProtect failed before patching Present sync interval.");
+        return false;
+    }
+
+    std::memcpy(address, kPresentSyncPatch.data(), kPresentSyncPatch.size());
+    FlushInstructionCache(GetCurrentProcess(), address, kPresentSyncPatch.size());
+
+    DWORD ignored{};
+    if (!VirtualProtect(address, kPresentSyncPatch.size(), oldProtection, &ignored)) {
+        Log("Present was patched, but restoring code page protection failed.");
+        return false;
+    }
+    return true;
+}
+
 bool ApplyFrameratePatch(std::uint8_t* table, int targetFps)
 {
     DWORD oldProtection{};
@@ -184,15 +265,48 @@ bool ApplyFrameratePatch(std::uint8_t* table, int targetFps)
     return true;
 }
 
-bool MonitorFrameratePatch(std::uint8_t* table, int targetFps)
+bool MonitorRuntimePatches(const PeImage& image,
+                           std::uint8_t* table,
+                           int targetFps)
 {
     const auto bytes = std::span<const std::uint8_t>(
         table, nioh1fix::kFrameProfileSignature.size());
     unsigned int reapplyCount{};
+    std::uint8_t* presentSyncAddress{};
 
     for (DWORD elapsed = kMonitorIntervalMs; elapsed <= kMonitorDurationMs;
          elapsed += kMonitorIntervalMs) {
         Sleep(kMonitorIntervalMs);
+
+        if (!presentSyncAddress) {
+            const auto present =
+                FindCodePattern(image, std::span<const std::uint8_t>(kPresentSignature));
+            if (present.count > 1) {
+                Log("Present signature was ambiguous; no code patch was applied.");
+                return false;
+            }
+            if (present.count == 1) {
+                presentSyncAddress = present.address + kPresentSyncLoadOffset;
+                if (!PatchPresentSyncInterval(presentSyncAddress)) {
+                    return false;
+                }
+
+                std::ostringstream message;
+                message << "Disabled Present SyncInterval at RVA=0x" << std::hex
+                        << std::uppercase
+                        << static_cast<std::size_t>(presentSyncAddress - image.base)
+                        << " after " << std::dec << elapsed << " ms.";
+                Log(message.str());
+            }
+        } else if (std::memcmp(presentSyncAddress,
+                               kPresentSyncPatch.data(),
+                               kPresentSyncPatch.size()) != 0) {
+            if (!PatchPresentSyncInterval(presentSyncAddress)) {
+                Log("Present code changed unexpectedly after patching.");
+                return false;
+            }
+            Log("Present SyncInterval patch was restored and has been reapplied.");
+        }
 
         const auto state =
             nioh1fix::InspectGameplayProfiles(bytes, static_cast<float>(targetFps));
@@ -220,9 +334,11 @@ bool MonitorFrameratePatch(std::uint8_t* table, int targetFps)
 
     std::ostringstream result;
     result << "Runtime monitor completed after " << kMonitorDurationMs
-           << " ms; profile state is patched, reapply_count=" << reapplyCount << '.';
+           << " ms; profile state is patched, reapply_count=" << reapplyCount
+           << ", present_sync=" << (presentSyncAddress ? "disabled" : "not_found")
+           << '.';
     Log(result.str());
-    return true;
+    return presentSyncAddress != nullptr;
 }
 
 DWORD WINAPI MainThread(void*)
@@ -230,7 +346,7 @@ DWORD WINAPI MainThread(void*)
     const auto pluginPath = GetModulePath(gThisModule);
     const auto pluginDirectory = pluginPath.parent_path();
     gLog.open(pluginDirectory / L"Nioh1Fix.log", std::ios::trunc);
-    Log("Nioh1Fix v0.2.0");
+    Log("Nioh1Fix v0.3.0");
 
     const auto exeModule = GetModuleHandleW(nullptr);
     const auto exePath = GetModulePath(exeModule);
@@ -293,7 +409,7 @@ DWORD WINAPI MainThread(void*)
     success << "Patched both 60 FPS gameplay profiles to " << targetFps
             << " FPS; 30 FPS profiles were left unchanged.";
     Log(success.str());
-    MonitorFrameratePatch(table, targetFps);
+    MonitorRuntimePatches(image, table, targetFps);
     return 0;
 }
 } // namespace
