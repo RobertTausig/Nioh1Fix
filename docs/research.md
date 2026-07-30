@@ -1,6 +1,6 @@
-# Framerate research
+# Framerate Research
 
-## Examined build
+## Examined Build
 
 - Product: Nioh: Complete Edition
 - Game version: v1.24.07
@@ -9,70 +9,110 @@
 - Packed executable SHA-256:
   `56006af3fc0945248aa7a2e33fd95d4e510f1dbe3395eb3644dae3c2806377f6`
 
-Analysis was performed against a temporary copy. The installed executable was
-not unpacked or modified.
+Analysis used a temporary unpacked copy. The installed executable was not
+modified.
 
-## Timing path
+## Frame Profiles
 
-The relevant Katana Engine path is a four-row frame profile table:
+Katana Engine uses a four-row frame-profile table:
 
-| Row | Target float | Flags |
+| Row | Stock target | Values |
 | --- | ---: | --- |
 | 0 | 60.0 | 1, 1 |
 | 1 | 30.0 | 1, 2 |
 | 2 | 30.0 | 1, 2 |
 | 3 | 60.0 | 1, 2 |
 
-The table is unique in the supported executable. A selected row feeds:
+Nioh1Fix changes rows 0 and 3 to `TargetFPS`, normally 120. Rows 1 and 2
+remain at 30.
 
-- a helper that returns the target FPS;
-- a helper that computes `1.0 / target FPS`;
-- the main update loop's normalized delta;
-- the QPC-based frame deadline and wait path.
+The table alone does not unlock presentation. The two gameplay rows stayed
+patched to 120 during testing while the game continued presenting at 60 FPS.
 
-This is materially safer than removing the wait call alone. Raising the two
-60.0 values changes the limiter cadence and the engine's corresponding
-timestep source together. The two 30.0 rows are deliberately preserved.
+## Confirmed Limiter Path
 
-Because the ASI loader runs while SteamStub is still initializing the process,
-the plugin monitors the verified table for 30 seconds. If SteamStub restores
-the exact original table after the initial write, the plugin logs the event and
-reapplies the configured target. Any other change is treated as unexpected and
-stops the monitor without writing.
+Three independent changes are required:
 
-Nioh also initializes a renderer field at offset `0x2F8C` to one and passes it
-as `SyncInterval` to `IDXGISwapChain::Present`. The settings code can restore
-that value, and Nioh exposes no VSync toggle. After SteamStub decrypts the code
-section, the plugin finds the unique complete Present block and replaces the
-six-byte sync-interval load with `xor edx, edx` and four NOP bytes. This removes
-the separate presentation cap while the frame profile retains the configured
-target.
+1. Patch the two 60 FPS gameplay profiles to the configured internal target.
+2. Disable the QPC-based limiter called immediately after each `Present`.
+3. Replace the game's Present dispatch with `SyncInterval = 0` and
+   `DXGI_PRESENT_DO_NOT_WAIT`.
 
-Relevant RVAs in the supported build:
+The post-Present limiter at RVA `0x00A9C2D0` was the final effective 60 FPS
+cap. Once disabled, the game reached an external MangoHud cap of 130 FPS in
+menus and gameplay.
+
+## Dynamic Gameplay Timing
+
+Unlocking presentation exposed a second issue: gameplay and animation speed
+depended on a direct target-FPS accessor at RVA `0x00E7D150`. This accessor has
+roughly 190 static call sites in the supported executable.
+
+Experiments established the direction of the dependency:
+
+- Returning 120 while presenting at 130 left gameplay somewhat too fast.
+- Returning the stock value 60 made gameplay approximately twice as fast.
+- Returning the measured presentation FPS improved timing.
+- Returning twice the measured presentation FPS produced stable wall-clock
+  animation duration and remained correct while changing FPS caps at runtime.
+
+For gameplay profiles, the final correction is:
+
+```text
+timing_divisor = 2 * measured_presentation_fps
+```
+
+Presentation intervals are measured once per frame with
+`QueryPerformanceCounter`. The accessor uses the immediately preceding frame
+interval and clamps the result to 30 through 2000. Before the first measured
+interval, it returns `2 * TargetFPS`.
+
+The two 30 FPS profiles bypass dynamic compensation and return 30.
+
+## Runtime Patching
+
+SteamStub decrypts code after the ASI starts. Nioh1Fix monitors for 30 seconds
+at 250 ms intervals, locates full byte signatures in executable sections, and
+requires unique matches before patching.
+
+The frame-profile table is also monitored. If it returns to the exact original
+state, the configured target is reapplied. Any unexpected table state stops
+monitoring without another write.
+
+Relevant RVAs for the supported build:
 
 - Frame profile table: `0x017AA8D8`
-- Return target profile float: `0x00E7D150`
-- Compute reciprocal target: `0x00E7D170`
-- Frame loop profile reads: `0x00A9D8AF` and `0x00A9DC77`
-- QPC wait helper: `0x00A9C2D0`
-- Wait call sites: `0x00A9DA39` and `0x00A9DE19`
-- Present sync-interval load: `0x002B2231`
+- Active frame profile: `0x01BB01E8`
+- Direct gameplay FPS accessor: `0x00E7D150`
+- Reciprocal target helper: `0x00E7D170`
+- Post-Present QPC limiter: `0x00A9C2D0`
+- Present dispatch block: `0x002B220C`
+- Original Present sync-interval load: `0x002B2231`
+- Frame controller: `0x019301D0`
 
-RVAs are documentation only. The plugin locates the full table signature,
-requires exactly one match in initialized readable data, verifies the PE
-timestamp and image size, and checks the complete original table immediately
-before writing.
+RVAs are documentation and diagnostics. Runtime writes use verified full
+signatures and supported PE metadata.
 
-## Remaining runtime checks
+## Rejected Approaches
 
-Before a stable release, validate at 60, 120, and an intentionally uneven load:
+- Patching only the frame-profile table did not exceed 60 FPS.
+- Forcing non-blocking Present did not exceed 60 FPS while the post-Present
+  limiter remained active.
+- Bypassing main and worker synchronization produced faster simulation without
+  increasing presentation and is not part of the final implementation.
+- Scaling the value at world offset `0x18322C` was ineffective for visible
+  animation. Diagnostics showed that value was already a seconds-based delta.
+- Returning a fixed stock 60 from the direct FPS accessor applied compensation
+  in the wrong direction and increased animation speed.
 
-- gameplay speed over a timed route;
-- dodge, attack, and invulnerability frame behavior;
-- enemy AI and projectile speed;
-- cloth and ragdoll behavior;
-- in-engine and video cutscenes;
-- menus, loading, focus loss, and frame drops;
-- Steam Overlay and Proton restart behavior.
+## Validation
 
-Capture frame times and compare wall-clock completion time at 60 and 120 FPS.
+Validated on Linux with Proton:
+
+- 130 FPS in menus and gameplay.
+- Runtime changes between external FPS caps.
+- Stable visible animation duration in wall-clock seconds across cap changes.
+- Clean startup after the final accessor-based implementation.
+
+Areas that still warrant broader regression testing include cutscenes, physics,
+invulnerability timing, enemy AI, focus loss, and sustained uneven frame times.
