@@ -39,4 +39,8 @@ if(BUILD_TESTING)
     add_executable(frame_profile_tests tests/frame_profile_tests.cpp)
     target_link_libraries(frame_profile_tests PRIVATE frame_profile)
     add_test(NAME frame_profile_tests COMMAND frame_profile_tests)
+
+    add_executable(timing_scale_tests tests/timing_scale_tests.cpp)
+    target_link_libraries(timing_scale_tests PRIVATE frame_profile)
+    add_test(NAME timing_scale_tests COMMAND timing_scale_tests)
 endif()

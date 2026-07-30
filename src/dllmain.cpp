@@ -1,8 +1,12 @@
 #include "frame_profile.hpp"
+#include "timing_scale.hpp"
 
 #include <windows.h>
 
 #include <algorithm>
+#include <array>
+#include <bit>
+#include <cmath>
 #include <cstdint>
 #include <cwctype>
 #include <cstring>
@@ -57,6 +61,54 @@ constexpr std::array<std::uint8_t, 24> kGameplayFpsAccessorSignature{
     0x8D, 0x0C, 0x40, 0x48, 0x8D, 0x05, 0x76, 0xD7,
     0x92, 0x00, 0xF3, 0x0F, 0x10, 0x04, 0x88, 0xC3,
 };
+constexpr std::array<std::uint8_t, 45> kMotionSlotsSignature{
+    0x48, 0x8B, 0x4C, 0x1F, 0x08, 0xFF, 0x50, 0x48, 0x48, 0x8B, 0xC8,
+    0x48, 0x8D, 0x54, 0x24, 0x20, 0xE8, 0xEB, 0xD2, 0x87, 0xFF, 0xE8,
+    0x36, 0x18, 0x52, 0x00, 0x48, 0x8B, 0x44, 0x1F, 0x10, 0x0F, 0x28,
+    0xC8, 0x48, 0x8B, 0x4C, 0x1F, 0x08, 0xFF, 0x90, 0x40, 0x01, 0x00,
+    0x00,
+};
+constexpr std::array<std::uint8_t, 72> kLinkedMotionSignature{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x40, 0x48, 0x83, 0xB9, 0x70, 0x01,
+    0x00, 0x00, 0x00, 0x48, 0x8B, 0xD9, 0x0F, 0x29, 0x7C, 0x24, 0x20,
+    0x0F, 0x28, 0xF9, 0x74, 0x49, 0x0F, 0x29, 0x74, 0x24, 0x30, 0xE8,
+    0x9B, 0x17, 0x52, 0x00, 0x48, 0x8B, 0x53, 0x18, 0x0F, 0x28, 0xF0,
+    0x48, 0x8B, 0x83, 0x78, 0x01, 0x00, 0x00, 0x48, 0x8B, 0x8B, 0x70,
+    0x01, 0x00, 0x00, 0xF3, 0x0F, 0x59, 0xF7, 0x48, 0x8B, 0x52, 0x08,
+    0xFF, 0x90, 0x50, 0x01, 0x00, 0x00,
+};
+constexpr std::array<std::uint8_t, 33> kMotionComponentSignature{
+    0x0F, 0x29, 0x78, 0xB8, 0x44, 0x0F, 0x29, 0x48, 0x98, 0x44, 0x0F,
+    0x29, 0x50, 0x88, 0xE8, 0x6A, 0x06, 0x52, 0x00, 0x44, 0x0F, 0x28,
+    0xD0, 0xF3, 0x45, 0x0F, 0x59, 0xD0, 0xE8, 0x9C, 0xDA, 0x06, 0x00,
+};
+constexpr std::array<std::uint8_t, 42> kInputUpdateSignature{
+    0x48, 0x83, 0xEC, 0x28, 0x48, 0x8B, 0x0D, 0x2D, 0xF3, 0xCA, 0x01,
+    0x48, 0x85, 0xC9, 0x74, 0x15, 0xE8, 0x0B, 0x02, 0x00, 0x00, 0x48,
+    0x8B, 0x0D, 0x1C, 0xF3, 0xCA, 0x01, 0x48, 0x83, 0xC4, 0x28, 0xE9,
+    0x4B, 0xDA, 0xFF, 0xFF, 0x48, 0x83, 0xC4, 0x28, 0xC3,
+};
+constexpr std::array<std::uint8_t, 63> kCameraInputSignature{
+    0x48, 0x8B, 0x0D, 0xEE, 0xBF, 0x04, 0x01, 0xF3, 0x44, 0x0F, 0x10,
+    0x3D, 0xF5, 0x57, 0xD3, 0x00, 0x44, 0x39, 0xA1, 0xAC, 0x00, 0x00,
+    0x00, 0x75, 0x05, 0xF3, 0x41, 0x0F, 0x59, 0xFF, 0x44, 0x39, 0xA1,
+    0xB0, 0x00, 0x00, 0x00, 0x75, 0x05, 0xF3, 0x45, 0x0F, 0x59, 0xC7,
+    0xF3, 0x45, 0x0F, 0x58, 0xD3, 0xF3, 0x45, 0x0F, 0x58, 0xCC, 0x8B,
+    0x81, 0xB4, 0x00, 0x00, 0x00, 0x0F, 0x57, 0xC0,
+};
+constexpr std::size_t kMotionSlotsCallOffset = 21;
+constexpr std::size_t kLinkedMotionCallOffset = 32;
+constexpr std::size_t kMotionComponentCallOffset = 14;
+constexpr std::size_t kInputUpdateCallOffset = 16;
+constexpr std::size_t kCameraScaleBlockOffset = 44;
+constexpr std::size_t kCameraScaleBlockSize = 10;
+constexpr std::size_t kInputPlayerCount = 4;
+constexpr std::size_t kInputPlayerStride = 0x1C0;
+constexpr std::size_t kInputPressedMaskOffset = 0x30;
+constexpr std::size_t kInputReleasedMaskOffset = 0x34;
+constexpr std::size_t kInputRepeatMaskOffset = 0x38;
+constexpr double kInputCadenceFps = 60.0;
+constexpr double kInputStallSeconds = 0.1;
 
 HMODULE gThisModule{};
 std::uint8_t* gImageBase{};
@@ -69,6 +121,18 @@ volatile LONG64 gPreviousPresentTick{};
 volatile LONG64 gLastPresentIntervalTicks{};
 LARGE_INTEGER gPerformanceFrequency{};
 int gConfiguredTargetFps{kDefaultTargetFps};
+nioh1fix::TimingScaleState gTimingScaleState{};
+volatile LONG gTimingScaleBits{0x3F800000};
+volatile LONG* gCameraScaleBits{};
+volatile LONG gMotionDeltaCallCount{};
+volatile LONG gInputUpdateCallCount{};
+volatile LONG gInputAcceptedCount{};
+volatile LONG gInputSkippedCount{};
+LONG64 gPreviousInputTick{};
+double gInputCadenceAccumulatorTicks{};
+
+using InputUpdateFunction = void (*)(void*);
+InputUpdateFunction gOriginalInputUpdate{};
 
 void Log(const std::string& message)
 {
@@ -241,6 +305,123 @@ PatternSearchResult FindCodePattern(const PeImage& image,
     return result;
 }
 
+LONG FloatBits(float value)
+{
+    return std::bit_cast<LONG>(value);
+}
+
+float ReadTimingScale()
+{
+    const LONG bits =
+        InterlockedCompareExchange(&gTimingScaleBits, 0, 0);
+    return std::bit_cast<float>(bits);
+}
+
+bool IsStockThirtyFpsProfile()
+{
+    if (!gImageBase) {
+        return false;
+    }
+    const LONG activeProfile = *reinterpret_cast<volatile LONG*>(
+        gImageBase + kActiveFrameProfileRva);
+    return activeProfile == 1 || activeProfile == 2;
+}
+
+void PublishTimingScale(double scale)
+{
+    const float published = IsStockThirtyFpsProfile()
+                                ? 1.0F
+                                : static_cast<float>(scale);
+    const LONG bits = FloatBits(published);
+    InterlockedExchange(&gTimingScaleBits, bits);
+    if (gCameraScaleBits) {
+        InterlockedExchange(gCameraScaleBits, bits);
+    }
+}
+
+float GetNormalizedMotionDelta()
+{
+    InterlockedIncrement(&gMotionDeltaCallCount);
+    if (IsStockThirtyFpsProfile()) {
+        return 1.0F / 30.0F;
+    }
+
+    // The validated player path requires a 2 * presentation-FPS timing
+    // divisor. Motion components use its reciprocal.
+    return ReadTimingScale() / 120.0F;
+}
+
+void ClearTransientInputMasks(void* inputManager)
+{
+    auto* bytes = static_cast<std::uint8_t*>(inputManager);
+    for (std::size_t player = 0; player < kInputPlayerCount; ++player) {
+        auto* block = bytes + player * kInputPlayerStride;
+        *reinterpret_cast<std::uint32_t*>(
+            block + kInputPressedMaskOffset) = 0;
+        *reinterpret_cast<std::uint32_t*>(
+            block + kInputReleasedMaskOffset) = 0;
+        *reinterpret_cast<std::uint32_t*>(
+            block + kInputRepeatMaskOffset) = 0;
+    }
+}
+
+bool ShouldRunInputUpdate()
+{
+    if (IsStockThirtyFpsProfile() ||
+        gPerformanceFrequency.QuadPart <= 0) {
+        gPreviousInputTick = 0;
+        gInputCadenceAccumulatorTicks = 0.0;
+        return true;
+    }
+
+    LARGE_INTEGER now{};
+    if (!QueryPerformanceCounter(&now)) {
+        return true;
+    }
+    if (gPreviousInputTick <= 0 || now.QuadPart <= gPreviousInputTick) {
+        gPreviousInputTick = now.QuadPart;
+        gInputCadenceAccumulatorTicks = 0.0;
+        return true;
+    }
+
+    const LONG64 elapsedTicks = now.QuadPart - gPreviousInputTick;
+    gPreviousInputTick = now.QuadPart;
+    const double stallTicks =
+        static_cast<double>(gPerformanceFrequency.QuadPart) *
+        kInputStallSeconds;
+    if (static_cast<double>(elapsedTicks) > stallTicks) {
+        gInputCadenceAccumulatorTicks = 0.0;
+        return true;
+    }
+
+    const double cadenceTicks =
+        static_cast<double>(gPerformanceFrequency.QuadPart) /
+        kInputCadenceFps;
+    gInputCadenceAccumulatorTicks += static_cast<double>(elapsedTicks);
+    if (gInputCadenceAccumulatorTicks < cadenceTicks) {
+        return false;
+    }
+
+    gInputCadenceAccumulatorTicks =
+        std::fmod(gInputCadenceAccumulatorTicks, cadenceTicks);
+    return true;
+}
+
+void NormalizedInputUpdate(void* inputManager)
+{
+    InterlockedIncrement(&gInputUpdateCallCount);
+    if (!gOriginalInputUpdate || ShouldRunInputUpdate()) {
+        InterlockedIncrement(&gInputAcceptedCount);
+        if (gOriginalInputUpdate) {
+            gOriginalInputUpdate(inputManager);
+        }
+        return;
+    }
+
+    InterlockedIncrement(&gInputSkippedCount);
+    ClearTransientInputMasks(inputManager);
+}
+
 HRESULT AggressivePresent(void* renderer, const std::uint8_t* presentConfig)
 {
     auto* swapChain = *reinterpret_cast<void**>(
@@ -265,9 +446,17 @@ HRESULT AggressivePresent(void* renderer, const std::uint8_t* presentConfig)
     const LONG64 previousPresentTick =
         InterlockedExchange64(&gPreviousPresentTick, start.QuadPart);
     if (previousPresentTick > 0 && start.QuadPart > previousPresentTick) {
-        InterlockedExchange64(
-            &gLastPresentIntervalTicks,
-            start.QuadPart - previousPresentTick);
+        const LONG64 intervalTicks = start.QuadPart - previousPresentTick;
+        InterlockedExchange64(&gLastPresentIntervalTicks, intervalTicks);
+        if (gPerformanceFrequency.QuadPart > 0) {
+            const double intervalSeconds =
+                static_cast<double>(intervalTicks) /
+                static_cast<double>(gPerformanceFrequency.QuadPart);
+            PublishTimingScale(nioh1fix::UpdateTimingScale(
+                gTimingScaleState,
+                intervalSeconds,
+                static_cast<double>(gConfiguredTargetFps)));
+        }
     }
     const HRESULT result = present(swapChain, 0, flags);
     QueryPerformanceCounter(&end);
@@ -341,6 +530,409 @@ bool PatchCode(std::uint8_t* address,
         return false;
     }
     return true;
+}
+
+enum class OptionalPatchStatus
+{
+    pending,
+    installed,
+    unavailable,
+};
+
+struct RelativePatch
+{
+    std::uint8_t* address{};
+    std::array<std::uint8_t, 5> original{};
+    std::array<std::uint8_t, 5> bytes{};
+};
+
+struct CameraPatch
+{
+    std::uint8_t* address{};
+    std::array<std::uint8_t, kCameraScaleBlockSize> bytes{};
+};
+
+struct TimingHookResources
+{
+    std::uint8_t* code{};
+    std::uint8_t* data{};
+    std::uint8_t* motionRelay{};
+    std::uint8_t* inputRelay{};
+    std::uint8_t* cameraStub{};
+};
+
+struct OptionalTimingPatches
+{
+    OptionalPatchStatus animation{OptionalPatchStatus::pending};
+    OptionalPatchStatus camera{OptionalPatchStatus::pending};
+    OptionalPatchStatus menu{OptionalPatchStatus::pending};
+    TimingHookResources resources{};
+    std::array<RelativePatch, 3> animationCalls{};
+    RelativePatch inputCall{};
+    CameraPatch cameraBlock{};
+};
+
+bool IsRelativeReachable(const void* instructionEnd, const void* destination)
+{
+    const auto distance =
+        reinterpret_cast<std::intptr_t>(destination) -
+        reinterpret_cast<std::intptr_t>(instructionEnd);
+    return distance >= INT32_MIN && distance <= INT32_MAX;
+}
+
+std::uint8_t* AllocateNearImage(const PeImage& image, SIZE_T size)
+{
+    SYSTEM_INFO systemInfo{};
+    GetSystemInfo(&systemInfo);
+    const auto granularity =
+        static_cast<std::uintptr_t>(systemInfo.dwAllocationGranularity);
+    const auto pageSize =
+        static_cast<SIZE_T>(systemInfo.dwPageSize);
+    const SIZE_T allocationSize =
+        (size + pageSize - 1) & ~(pageSize - 1);
+    const auto imageEnd =
+        reinterpret_cast<std::uintptr_t>(image.base) +
+        image.headers->OptionalHeader.SizeOfImage;
+    std::uintptr_t cursor =
+        (imageEnd + granularity - 1) & ~(granularity - 1);
+    const std::uintptr_t limit =
+        reinterpret_cast<std::uintptr_t>(image.base) + 0x60000000ULL;
+
+    while (cursor < limit) {
+        MEMORY_BASIC_INFORMATION region{};
+        if (VirtualQuery(reinterpret_cast<void*>(cursor),
+                         &region,
+                         sizeof(region)) == 0) {
+            break;
+        }
+
+        const auto regionBase =
+            reinterpret_cast<std::uintptr_t>(region.BaseAddress);
+        const auto regionEnd = regionBase + region.RegionSize;
+        if (region.State == MEM_FREE) {
+            const auto candidate =
+                (regionBase + granularity - 1) & ~(granularity - 1);
+            if (candidate >= cursor && candidate < regionEnd &&
+                allocationSize <= regionEnd - candidate) {
+                if (auto* memory = static_cast<std::uint8_t*>(VirtualAlloc(
+                        reinterpret_cast<void*>(candidate),
+                        allocationSize,
+                        MEM_COMMIT | MEM_RESERVE,
+                        PAGE_READWRITE))) {
+                    return memory;
+                }
+            }
+        }
+        if (regionEnd <= cursor) {
+            break;
+        }
+        cursor = regionEnd;
+    }
+    return nullptr;
+}
+
+bool WriteExecutableRegion(std::uint8_t* address,
+                           std::span<const std::uint8_t> bytes)
+{
+    DWORD oldProtection{};
+    if (!VirtualProtect(
+            address, bytes.size(), PAGE_EXECUTE_READWRITE, &oldProtection)) {
+        return false;
+    }
+    std::memcpy(address, bytes.data(), bytes.size());
+    FlushInstructionCache(GetCurrentProcess(), address, bytes.size());
+    DWORD ignored{};
+    return VirtualProtect(
+               address, bytes.size(), PAGE_EXECUTE_READ, &ignored) != FALSE;
+}
+
+std::array<std::uint8_t, 12> MakeAbsoluteJump(const void* destination)
+{
+    std::array<std::uint8_t, 12> bytes{
+        0x48, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xE0,
+    };
+    const auto target = reinterpret_cast<std::uintptr_t>(destination);
+    std::memcpy(bytes.data() + 2, &target, sizeof(target));
+    return bytes;
+}
+
+bool EnsureTimingHookResources(const PeImage& image,
+                               TimingHookResources& resources)
+{
+    if (resources.code) {
+        return true;
+    }
+
+    auto* code = AllocateNearImage(image, 4096);
+    auto* data = AllocateNearImage(image, 4096);
+    if (!code || !data) {
+        if (code) {
+            VirtualFree(code, 0, MEM_RELEASE);
+        }
+        if (data) {
+            VirtualFree(data, 0, MEM_RELEASE);
+        }
+        Log("Could not reserve memory near nioh.exe for optional timing hooks.");
+        return false;
+    }
+
+    resources.code = code;
+    resources.data = data;
+    resources.motionRelay = code;
+    resources.inputRelay = code + 16;
+    resources.cameraStub = code + 64;
+
+    const auto motionJump =
+        MakeAbsoluteJump(reinterpret_cast<const void*>(&GetNormalizedMotionDelta));
+    const auto inputJump =
+        MakeAbsoluteJump(reinterpret_cast<const void*>(&NormalizedInputUpdate));
+    std::memcpy(resources.motionRelay, motionJump.data(), motionJump.size());
+    std::memcpy(resources.inputRelay, inputJump.data(), inputJump.size());
+    *reinterpret_cast<LONG*>(resources.data) =
+        FloatBits(ReadTimingScale());
+
+    DWORD oldProtection{};
+    if (!VirtualProtect(code, 4096, PAGE_EXECUTE_READ, &oldProtection)) {
+        VirtualFree(code, 0, MEM_RELEASE);
+        VirtualFree(data, 0, MEM_RELEASE);
+        resources = {};
+        Log("Could not make the optional timing relays executable.");
+        return false;
+    }
+    FlushInstructionCache(GetCurrentProcess(), code, 32);
+    gCameraScaleBits = reinterpret_cast<volatile LONG*>(data);
+    return true;
+}
+
+bool BuildRelativePatch(std::uint8_t* address,
+                        std::uint8_t opcode,
+                        const void* destination,
+                        std::array<std::uint8_t, 5>& replacement)
+{
+    if (address[0] != opcode ||
+        !IsRelativeReachable(address + 5, destination)) {
+        return false;
+    }
+    replacement[0] = opcode;
+    const auto distance =
+        reinterpret_cast<std::intptr_t>(destination) -
+        reinterpret_cast<std::intptr_t>(address + 5);
+    const auto relative = static_cast<std::int32_t>(distance);
+    std::memcpy(replacement.data() + 1, &relative, sizeof(relative));
+    return true;
+}
+
+bool PatchRelativeCall(std::uint8_t* address,
+                       const void* destination,
+                       const char* description,
+                       RelativePatch& result)
+{
+    std::memcpy(result.original.data(), address, result.original.size());
+    if (!BuildRelativePatch(address, 0xE8, destination, result.bytes)) {
+        Log(std::string(description) +
+            " call could not reach its verified relay.");
+        return false;
+    }
+    if (!PatchCode(
+            address, result.original, result.bytes, description)) {
+        return false;
+    }
+    result.address = address;
+    return true;
+}
+
+OptionalPatchStatus TryInstallAnimationTiming(
+    const PeImage& image,
+    OptionalTimingPatches& patches)
+{
+    const auto slots =
+        FindCodePattern(image, std::span<const std::uint8_t>(kMotionSlotsSignature));
+    const auto linked =
+        FindCodePattern(image, std::span<const std::uint8_t>(kLinkedMotionSignature));
+    const auto component = FindCodePattern(
+        image, std::span<const std::uint8_t>(kMotionComponentSignature));
+    if (slots.count > 1 || linked.count > 1 || component.count > 1) {
+        Log("An animation timing signature was ambiguous; animation "
+            "normalization was not installed.");
+        return OptionalPatchStatus::unavailable;
+    }
+    if (slots.count == 0 || linked.count == 0 || component.count == 0) {
+        return OptionalPatchStatus::pending;
+    }
+    if (!EnsureTimingHookResources(image, patches.resources)) {
+        return OptionalPatchStatus::unavailable;
+    }
+
+    std::array<std::uint8_t*, 3> calls{
+        slots.address + kMotionSlotsCallOffset,
+        linked.address + kLinkedMotionCallOffset,
+        component.address + kMotionComponentCallOffset,
+    };
+    for (auto* call : calls) {
+        std::array<std::uint8_t, 5> replacement{};
+        if (!BuildRelativePatch(
+                call, 0xE8, patches.resources.motionRelay, replacement)) {
+            Log("An animation call did not match the verified call boundary.");
+            return OptionalPatchStatus::unavailable;
+        }
+    }
+
+    for (std::size_t index = 0; index < calls.size(); ++index) {
+        if (!PatchRelativeCall(
+                calls[index],
+                patches.resources.motionRelay,
+                "an animation-delta call",
+                patches.animationCalls[index])) {
+            for (std::size_t patched = 0; patched < index; ++patched) {
+                const auto& record = patches.animationCalls[patched];
+                PatchCode(record.address,
+                          record.bytes,
+                          record.original,
+                          "an animation-delta rollback");
+            }
+            return OptionalPatchStatus::unavailable;
+        }
+    }
+
+    Log("Normalized three verified motion-component delta paths to the "
+        "presentation cadence.");
+    return OptionalPatchStatus::installed;
+}
+
+OptionalPatchStatus TryInstallInputCadence(
+    const PeImage& image,
+    OptionalTimingPatches& patches)
+{
+    const auto input = FindCodePattern(
+        image, std::span<const std::uint8_t>(kInputUpdateSignature));
+    if (input.count > 1) {
+        Log("The input-update signature was ambiguous; 60 Hz menu-input "
+            "gating was not installed.");
+        return OptionalPatchStatus::unavailable;
+    }
+    if (input.count == 0) {
+        return OptionalPatchStatus::pending;
+    }
+    if (!EnsureTimingHookResources(image, patches.resources)) {
+        return OptionalPatchStatus::unavailable;
+    }
+
+    auto* call = input.address + kInputUpdateCallOffset;
+    if (call[0] != 0xE8) {
+        Log("The verified input-update call boundary changed.");
+        return OptionalPatchStatus::unavailable;
+    }
+    std::int32_t originalDisplacement{};
+    std::memcpy(&originalDisplacement, call + 1, sizeof(originalDisplacement));
+    gOriginalInputUpdate = reinterpret_cast<InputUpdateFunction>(
+        call + 5 + originalDisplacement);
+    if (!PatchRelativeCall(call,
+                           patches.resources.inputRelay,
+                           "the 60 Hz input-cadence gate",
+                           patches.inputCall)) {
+        gOriginalInputUpdate = nullptr;
+        return OptionalPatchStatus::unavailable;
+    }
+
+    Log("Gated transient and repeat input state to the original 60 Hz "
+        "cadence.");
+    return OptionalPatchStatus::installed;
+}
+
+OptionalPatchStatus TryInstallCameraTiming(
+    const PeImage& image,
+    OptionalTimingPatches& patches)
+{
+    const auto camera = FindCodePattern(
+        image, std::span<const std::uint8_t>(kCameraInputSignature));
+    if (camera.count > 1) {
+        Log("The camera-input signature was ambiguous; camera normalization "
+            "was not installed.");
+        return OptionalPatchStatus::unavailable;
+    }
+    if (camera.count == 0) {
+        return OptionalPatchStatus::pending;
+    }
+    if (!EnsureTimingHookResources(image, patches.resources)) {
+        return OptionalPatchStatus::unavailable;
+    }
+
+    auto* block = camera.address + kCameraScaleBlockOffset;
+    auto* continuation = block + kCameraScaleBlockSize;
+    auto* stub = patches.resources.cameraStub;
+    std::array<std::uint8_t, 33> stubBytes{};
+    std::memcpy(stubBytes.data(), block, kCameraScaleBlockSize);
+
+    const std::array<std::uint8_t, 5> multiplyXmm10{
+        0xF3, 0x44, 0x0F, 0x59, 0x15,
+    };
+    const std::array<std::uint8_t, 5> multiplyXmm9{
+        0xF3, 0x44, 0x0F, 0x59, 0x0D,
+    };
+    std::memcpy(stubBytes.data() + 10,
+                multiplyXmm10.data(),
+                multiplyXmm10.size());
+    std::memcpy(stubBytes.data() + 19,
+                multiplyXmm9.data(),
+                multiplyXmm9.size());
+
+    if (!IsRelativeReachable(stub + 19, patches.resources.data) ||
+        !IsRelativeReachable(stub + 28, patches.resources.data)) {
+        Log("The camera timing stub could not reach its scale value.");
+        return OptionalPatchStatus::unavailable;
+    }
+    const auto scaleAddress =
+        reinterpret_cast<std::intptr_t>(patches.resources.data);
+    const auto firstDisplacement = static_cast<std::int32_t>(
+        scaleAddress - reinterpret_cast<std::intptr_t>(stub + 19));
+    const auto secondDisplacement = static_cast<std::int32_t>(
+        scaleAddress - reinterpret_cast<std::intptr_t>(stub + 28));
+    std::memcpy(stubBytes.data() + 15,
+                &firstDisplacement,
+                sizeof(firstDisplacement));
+    std::memcpy(stubBytes.data() + 24,
+                &secondDisplacement,
+                sizeof(secondDisplacement));
+    stubBytes[28] = 0xE9;
+    if (!IsRelativeReachable(stub + 33, continuation)) {
+        Log("The camera timing stub could not reach its continuation.");
+        return OptionalPatchStatus::unavailable;
+    }
+    const auto continuationDisplacement = static_cast<std::int32_t>(
+        reinterpret_cast<std::intptr_t>(continuation) -
+        reinterpret_cast<std::intptr_t>(stub + 33));
+    std::memcpy(stubBytes.data() + 29,
+                &continuationDisplacement,
+                sizeof(continuationDisplacement));
+    if (!WriteExecutableRegion(stub, stubBytes)) {
+        Log("Could not write the camera timing stub.");
+        return OptionalPatchStatus::unavailable;
+    }
+
+    std::array<std::uint8_t, kCameraScaleBlockSize> original{};
+    std::memcpy(original.data(), block, original.size());
+    patches.cameraBlock.bytes.fill(0x90);
+    patches.cameraBlock.bytes[0] = 0xE9;
+    if (!IsRelativeReachable(block + 5, stub)) {
+        Log("The camera timing branch could not reach its verified stub.");
+        return OptionalPatchStatus::unavailable;
+    }
+    const auto stubDisplacement = static_cast<std::int32_t>(
+        reinterpret_cast<std::intptr_t>(stub) -
+        reinterpret_cast<std::intptr_t>(block + 5));
+    std::memcpy(patches.cameraBlock.bytes.data() + 1,
+                &stubDisplacement,
+                sizeof(stubDisplacement));
+    if (!PatchCode(block,
+                   original,
+                   patches.cameraBlock.bytes,
+                   "the camera input scale")) {
+        return OptionalPatchStatus::unavailable;
+    }
+    patches.cameraBlock.address = block;
+    Log("Scaled the verified gameplay camera's controller and mouse input "
+        "by the presentation interval.");
+    return OptionalPatchStatus::installed;
 }
 
 struct GameplayFpsPatch
@@ -509,6 +1101,7 @@ bool MonitorRuntimePatches(const PeImage& image,
     PresentPatch presentPatch{};
     GameplayFpsPatch gameplayFpsPatch{};
     std::uint8_t* mainFrameLimiterAddress{};
+    OptionalTimingPatches optionalPatches{};
 
     for (DWORD elapsed = kMonitorIntervalMs; elapsed <= kMonitorDurationMs;
          elapsed += kMonitorIntervalMs) {
@@ -610,6 +1203,47 @@ bool MonitorRuntimePatches(const PeImage& image,
             return false;
         }
 
+        if (optionalPatches.animation == OptionalPatchStatus::pending) {
+            optionalPatches.animation =
+                TryInstallAnimationTiming(image, optionalPatches);
+        } else if (optionalPatches.animation ==
+                   OptionalPatchStatus::installed) {
+            for (const auto& patch : optionalPatches.animationCalls) {
+                if (!patch.address ||
+                    std::memcmp(patch.address,
+                                patch.bytes.data(),
+                                patch.bytes.size()) != 0) {
+                    Log("An animation timing call changed unexpectedly.");
+                    return false;
+                }
+            }
+        }
+
+        if (optionalPatches.camera == OptionalPatchStatus::pending) {
+            optionalPatches.camera =
+                TryInstallCameraTiming(image, optionalPatches);
+        } else if (optionalPatches.camera ==
+                       OptionalPatchStatus::installed &&
+                   (!optionalPatches.cameraBlock.address ||
+                    std::memcmp(optionalPatches.cameraBlock.address,
+                                optionalPatches.cameraBlock.bytes.data(),
+                                optionalPatches.cameraBlock.bytes.size()) != 0)) {
+            Log("The camera timing block changed unexpectedly.");
+            return false;
+        }
+
+        if (optionalPatches.menu == OptionalPatchStatus::pending) {
+            optionalPatches.menu =
+                TryInstallInputCadence(image, optionalPatches);
+        } else if (optionalPatches.menu == OptionalPatchStatus::installed &&
+                   (!optionalPatches.inputCall.address ||
+                    std::memcmp(optionalPatches.inputCall.address,
+                                optionalPatches.inputCall.bytes.data(),
+                                optionalPatches.inputCall.bytes.size()) != 0)) {
+            Log("The input cadence call changed unexpectedly.");
+            return false;
+        }
+
         if (elapsed % kDiagnosticsIntervalMs == 0) {
             const auto activeProfile =
                 *reinterpret_cast<volatile LONG*>(image.base + kActiveFrameProfileRva);
@@ -635,7 +1269,25 @@ bool MonitorRuntimePatches(const PeImage& image,
                         << ", present_would_block=" << gPresentWouldBlockCount
                         << ", present_failures=" << gPresentFailureCount
                         << ", gameplay_reference_fps="
-                        << GetGameplayReferenceFps();
+                        << GetGameplayReferenceFps()
+                        << ", timing_scale=" << ReadTimingScale()
+                        << ", animation_delta="
+                        << (IsStockThirtyFpsProfile()
+                                ? 1.0F / 30.0F
+                                : ReadTimingScale() / 120.0F)
+                        << ", animation_delta_calls="
+                        << gMotionDeltaCallCount
+                        << ", input_updates=" << gInputUpdateCallCount
+                        << ", input_accepted=" << gInputAcceptedCount
+                        << ", input_skipped=" << gInputSkippedCount;
+            const LONG64 intervalTicks = InterlockedCompareExchange64(
+                &gLastPresentIntervalTicks, 0, 0);
+            if (intervalTicks > 0 && gPerformanceFrequency.QuadPart > 0) {
+                diagnostics << ", measured_present_fps="
+                            << static_cast<double>(
+                                   gPerformanceFrequency.QuadPart) /
+                                   static_cast<double>(intervalTicks);
+            }
             if (gPresentCallCount > 0 && gPerformanceFrequency.QuadPart > 0) {
                 const double averagePresentMicroseconds =
                     static_cast<double>(gPresentTotalTicks) * 1'000'000.0 /
@@ -682,6 +1334,18 @@ bool MonitorRuntimePatches(const PeImage& image,
            << (mainFrameLimiterAddress ? "disabled" : "not_found")
            << ", gameplay_timing="
            << (gameplayFpsPatch.address ? "dynamic_compensation" : "not_found")
+           << ", entity_animation="
+           << (optionalPatches.animation == OptionalPatchStatus::installed
+                   ? "normalized"
+                   : "baseline")
+           << ", camera_input="
+           << (optionalPatches.camera == OptionalPatchStatus::installed
+                   ? "normalized"
+                   : "baseline")
+           << ", menu_input="
+           << (optionalPatches.menu == OptionalPatchStatus::installed
+                   ? "60_hz_gated"
+                   : "baseline")
            << '.';
     Log(result.str());
     return presentPatch.address != nullptr &&
