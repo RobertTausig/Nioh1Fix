@@ -96,12 +96,23 @@ constexpr std::array<std::uint8_t, 63> kCameraInputSignature{
     0xF3, 0x45, 0x0F, 0x58, 0xD3, 0xF3, 0x45, 0x0F, 0x58, 0xCC, 0x8B,
     0x81, 0xB4, 0x00, 0x00, 0x00, 0x0F, 0x57, 0xC0,
 };
+constexpr std::array<std::uint8_t, 78> kGrassWindSignature{
+    0x48, 0x8B, 0x87, 0x08, 0x04, 0x00, 0x00, 0x48, 0x8D, 0x8F, 0xC0, 0x2E,
+    0x18, 0x00, 0x4C, 0x8D, 0xA8, 0x00, 0x05, 0x00, 0x00, 0x48, 0x85, 0xC0,
+    0x75, 0x07, 0x4C, 0x8D, 0x2D, 0x36, 0xD9, 0xF8, 0x00, 0xF3, 0x0F, 0x10,
+    0x71, 0x34, 0xF3, 0x0F, 0x10, 0x79, 0x30, 0xE8, 0x97, 0xC6, 0xA0, 0xFF,
+    0x4C, 0x8B, 0xC0, 0x0F, 0x28, 0xDE, 0x0F, 0x28, 0xCF, 0x49, 0x8B, 0xCD,
+    0xE8, 0xF6, 0xBE, 0xA2, 0xFF, 0x48, 0x8B, 0xB7, 0x08, 0x04, 0x00, 0x00,
+    0x41, 0xBE, 0x00, 0x00, 0x00, 0x00,
+};
 constexpr std::size_t kMotionSlotsCallOffset = 21;
 constexpr std::size_t kLinkedMotionCallOffset = 32;
 constexpr std::size_t kMotionComponentCallOffset = 14;
 constexpr std::size_t kInputUpdateCallOffset = 16;
 constexpr std::size_t kCameraScaleBlockOffset = 44;
 constexpr std::size_t kCameraScaleBlockSize = 10;
+constexpr std::size_t kGrassWindScaleBlockOffset = 51;
+constexpr std::size_t kGrassWindScaleBlockSize = 9;
 constexpr std::size_t kInputPlayerCount = 4;
 constexpr std::size_t kInputPlayerStride = 0x1C0;
 constexpr std::size_t kInputPressedMaskOffset = 0x30;
@@ -124,6 +135,7 @@ int gConfiguredTargetFps{kDefaultTargetFps};
 nioh1fix::TimingScaleState gTimingScaleState{};
 volatile LONG gTimingScaleBits{0x3F800000};
 volatile LONG* gCameraScaleBits{};
+volatile LONG* gGrassWindCallCount{};
 volatile LONG gMotionDeltaCallCount{};
 volatile LONG gInputUpdateCallCount{};
 volatile LONG gInputAcceptedCount{};
@@ -315,6 +327,11 @@ float ReadTimingScale()
     const LONG bits =
         InterlockedCompareExchange(&gTimingScaleBits, 0, 0);
     return std::bit_cast<float>(bits);
+}
+
+LONG ReadHookCounter(volatile LONG* counter)
+{
+    return counter ? InterlockedCompareExchange(counter, 0, 0) : 0;
 }
 
 bool IsStockThirtyFpsProfile()
@@ -552,6 +569,12 @@ struct CameraPatch
     std::array<std::uint8_t, kCameraScaleBlockSize> bytes{};
 };
 
+struct GrassWindPatch
+{
+    std::uint8_t* address{};
+    std::array<std::uint8_t, kGrassWindScaleBlockSize> bytes{};
+};
+
 struct TimingHookResources
 {
     std::uint8_t* code{};
@@ -559,17 +582,20 @@ struct TimingHookResources
     std::uint8_t* motionRelay{};
     std::uint8_t* inputRelay{};
     std::uint8_t* cameraStub{};
+    std::uint8_t* grassWindStub{};
 };
 
 struct OptionalTimingPatches
 {
     OptionalPatchStatus animation{OptionalPatchStatus::pending};
     OptionalPatchStatus camera{OptionalPatchStatus::pending};
+    OptionalPatchStatus vegetation{OptionalPatchStatus::pending};
     OptionalPatchStatus menu{OptionalPatchStatus::pending};
     TimingHookResources resources{};
     std::array<RelativePatch, 3> animationCalls{};
     RelativePatch inputCall{};
     CameraPatch cameraBlock{};
+    GrassWindPatch grassWindBlock{};
 };
 
 bool IsRelativeReachable(const void* instructionEnd, const void* destination)
@@ -681,6 +707,7 @@ bool EnsureTimingHookResources(const PeImage& image,
     resources.motionRelay = code;
     resources.inputRelay = code + 16;
     resources.cameraStub = code + 64;
+    resources.grassWindStub = code + 128;
 
     const auto motionJump =
         MakeAbsoluteJump(reinterpret_cast<const void*>(&GetNormalizedMotionDelta));
@@ -690,6 +717,7 @@ bool EnsureTimingHookResources(const PeImage& image,
     std::memcpy(resources.inputRelay, inputJump.data(), inputJump.size());
     *reinterpret_cast<LONG*>(resources.data) =
         FloatBits(ReadTimingScale());
+    *reinterpret_cast<LONG*>(resources.data + sizeof(LONG)) = 0;
 
     DWORD oldProtection{};
     if (!VirtualProtect(code, 4096, PAGE_EXECUTE_READ, &oldProtection)) {
@@ -701,6 +729,8 @@ bool EnsureTimingHookResources(const PeImage& image,
     }
     FlushInstructionCache(GetCurrentProcess(), code, 32);
     gCameraScaleBits = reinterpret_cast<volatile LONG*>(data);
+    gGrassWindCallCount =
+        reinterpret_cast<volatile LONG*>(data + sizeof(LONG));
     return true;
 }
 
@@ -932,6 +962,105 @@ OptionalPatchStatus TryInstallCameraTiming(
     patches.cameraBlock.address = block;
     Log("Scaled the verified gameplay camera's controller and mouse input "
         "by the presentation interval.");
+    return OptionalPatchStatus::installed;
+}
+
+OptionalPatchStatus TryInstallVegetationTiming(
+    const PeImage& image,
+    OptionalTimingPatches& patches)
+{
+    const auto grassWind = FindCodePattern(
+        image, std::span<const std::uint8_t>(kGrassWindSignature));
+    if (grassWind.count > 1) {
+        Log("The grass-wind signature was ambiguous; vegetation animation "
+            "normalization was not installed.");
+        return OptionalPatchStatus::unavailable;
+    }
+    if (grassWind.count == 0) {
+        return OptionalPatchStatus::pending;
+    }
+    if (!EnsureTimingHookResources(image, patches.resources)) {
+        return OptionalPatchStatus::unavailable;
+    }
+
+    auto* block = grassWind.address + kGrassWindScaleBlockOffset;
+    auto* continuation = block + kGrassWindScaleBlockSize;
+    auto* stub = patches.resources.grassWindStub;
+    std::array<std::uint8_t, 29> stubBytes{};
+    std::memcpy(stubBytes.data(), block, kGrassWindScaleBlockSize);
+
+    const std::array<std::uint8_t, 8> multiplyXmm3{
+        0xF3, 0x0F, 0x59, 0x1D, 0, 0, 0, 0,
+    };
+    const std::array<std::uint8_t, 7> incrementCounter{
+        0xF0, 0xFF, 0x05, 0, 0, 0, 0,
+    };
+    std::memcpy(stubBytes.data() + 9,
+                multiplyXmm3.data(),
+                multiplyXmm3.size());
+    std::memcpy(stubBytes.data() + 17,
+                incrementCounter.data(),
+                incrementCounter.size());
+
+    auto* scale = patches.resources.data;
+    auto* counter = patches.resources.data + sizeof(LONG);
+    if (!IsRelativeReachable(stub + 17, scale) ||
+        !IsRelativeReachable(stub + 24, counter)) {
+        Log("The grass-wind timing stub could not reach its timing data.");
+        return OptionalPatchStatus::unavailable;
+    }
+    const auto scaleDisplacement = static_cast<std::int32_t>(
+        reinterpret_cast<std::intptr_t>(scale) -
+        reinterpret_cast<std::intptr_t>(stub + 17));
+    const auto counterDisplacement = static_cast<std::int32_t>(
+        reinterpret_cast<std::intptr_t>(counter) -
+        reinterpret_cast<std::intptr_t>(stub + 24));
+    std::memcpy(stubBytes.data() + 13,
+                &scaleDisplacement,
+                sizeof(scaleDisplacement));
+    std::memcpy(stubBytes.data() + 20,
+                &counterDisplacement,
+                sizeof(counterDisplacement));
+
+    stubBytes[24] = 0xE9;
+    if (!IsRelativeReachable(stub + 29, continuation)) {
+        Log("The grass-wind timing stub could not reach its continuation.");
+        return OptionalPatchStatus::unavailable;
+    }
+    const auto continuationDisplacement = static_cast<std::int32_t>(
+        reinterpret_cast<std::intptr_t>(continuation) -
+        reinterpret_cast<std::intptr_t>(stub + 29));
+    std::memcpy(stubBytes.data() + 25,
+                &continuationDisplacement,
+                sizeof(continuationDisplacement));
+    if (!WriteExecutableRegion(stub, stubBytes)) {
+        Log("Could not write the grass-wind timing stub.");
+        return OptionalPatchStatus::unavailable;
+    }
+
+    std::array<std::uint8_t, kGrassWindScaleBlockSize> original{};
+    std::memcpy(original.data(), block, original.size());
+    patches.grassWindBlock.bytes.fill(0x90);
+    patches.grassWindBlock.bytes[0] = 0xE9;
+    if (!IsRelativeReachable(block + 5, stub)) {
+        Log("The grass-wind timing branch could not reach its verified stub.");
+        return OptionalPatchStatus::unavailable;
+    }
+    const auto stubDisplacement = static_cast<std::int32_t>(
+        reinterpret_cast<std::intptr_t>(stub) -
+        reinterpret_cast<std::intptr_t>(block + 5));
+    std::memcpy(patches.grassWindBlock.bytes.data() + 1,
+                &stubDisplacement,
+                sizeof(stubDisplacement));
+    if (!PatchCode(block,
+                   original,
+                   patches.grassWindBlock.bytes,
+                   "the grass-wind animation scale")) {
+        return OptionalPatchStatus::unavailable;
+    }
+    patches.grassWindBlock.address = block;
+    Log("Scaled the verified grass and bush wind phase by the presentation "
+        "interval.");
     return OptionalPatchStatus::installed;
 }
 
@@ -1232,6 +1361,19 @@ bool MonitorRuntimePatches(const PeImage& image,
             return false;
         }
 
+        if (optionalPatches.vegetation == OptionalPatchStatus::pending) {
+            optionalPatches.vegetation =
+                TryInstallVegetationTiming(image, optionalPatches);
+        } else if (
+            optionalPatches.vegetation == OptionalPatchStatus::installed &&
+            (!optionalPatches.grassWindBlock.address ||
+             std::memcmp(optionalPatches.grassWindBlock.address,
+                         optionalPatches.grassWindBlock.bytes.data(),
+                         optionalPatches.grassWindBlock.bytes.size()) != 0)) {
+            Log("The grass-wind timing block changed unexpectedly.");
+            return false;
+        }
+
         if (optionalPatches.menu == OptionalPatchStatus::pending) {
             optionalPatches.menu =
                 TryInstallInputCadence(image, optionalPatches);
@@ -1277,6 +1419,8 @@ bool MonitorRuntimePatches(const PeImage& image,
                                 : ReadTimingScale() / 120.0F)
                         << ", animation_delta_calls="
                         << gMotionDeltaCallCount
+                        << ", grass_wind_updates="
+                        << ReadHookCounter(gGrassWindCallCount)
                         << ", input_updates=" << gInputUpdateCallCount
                         << ", input_accepted=" << gInputAcceptedCount
                         << ", input_skipped=" << gInputSkippedCount;
@@ -1336,6 +1480,10 @@ bool MonitorRuntimePatches(const PeImage& image,
            << (gameplayFpsPatch.address ? "dynamic_compensation" : "not_found")
            << ", entity_animation="
            << (optionalPatches.animation == OptionalPatchStatus::installed
+                   ? "normalized"
+                   : "baseline")
+           << ", vegetation_animation="
+           << (optionalPatches.vegetation == OptionalPatchStatus::installed
                    ? "normalized"
                    : "baseline")
            << ", camera_input="
