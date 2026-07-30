@@ -96,6 +96,14 @@ constexpr std::array<std::uint8_t, 63> kCameraInputSignature{
     0xF3, 0x45, 0x0F, 0x58, 0xD3, 0xF3, 0x45, 0x0F, 0x58, 0xCC, 0x8B,
     0x81, 0xB4, 0x00, 0x00, 0x00, 0x0F, 0x57, 0xC0,
 };
+constexpr std::array<std::uint8_t, 72> kAimCameraInputSignature{
+    0xF3, 0x0F, 0x58, 0x9F, 0xB0, 0x00, 0x00, 0x00, 0xF3, 0x0F, 0x58, 0xA7,
+    0x00, 0x01, 0x00, 0x00, 0xF3, 0x0F, 0x5E, 0x1D, 0x83, 0xA6, 0xD2, 0x00,
+    0xF3, 0x0F, 0x5E, 0x25, 0x7B, 0xA6, 0xD2, 0x00, 0xF3, 0x0F, 0x58, 0xDE,
+    0xF3, 0x0F, 0x58, 0xE7, 0xF3, 0x0F, 0x5A, 0xC4, 0x0F, 0x54, 0xC5, 0x66,
+    0x0F, 0x5A, 0xC0, 0x0F, 0x2F, 0xC1, 0x76, 0x35, 0xF3, 0x0F, 0x10, 0x0D,
+    0x1B, 0x15, 0xF1, 0x00, 0xF3, 0x0F, 0x59, 0x8F, 0x90, 0x01, 0x00, 0x00,
+};
 constexpr std::array<std::uint8_t, 78> kGrassWindSignature{
     0x48, 0x8B, 0x87, 0x08, 0x04, 0x00, 0x00, 0x48, 0x8D, 0x8F, 0xC0, 0x2E,
     0x18, 0x00, 0x4C, 0x8D, 0xA8, 0x00, 0x05, 0x00, 0x00, 0x48, 0x85, 0xC0,
@@ -111,6 +119,8 @@ constexpr std::size_t kMotionComponentCallOffset = 14;
 constexpr std::size_t kInputUpdateCallOffset = 16;
 constexpr std::size_t kCameraScaleBlockOffset = 44;
 constexpr std::size_t kCameraScaleBlockSize = 10;
+constexpr std::size_t kAimCameraScaleBlockOffset = 32;
+constexpr std::size_t kAimCameraScaleBlockSize = 8;
 constexpr std::size_t kGrassWindScaleBlockOffset = 51;
 constexpr std::size_t kGrassWindScaleBlockSize = 9;
 constexpr std::size_t kInputPlayerCount = 4;
@@ -135,6 +145,7 @@ int gConfiguredTargetFps{kDefaultTargetFps};
 nioh1fix::TimingScaleState gTimingScaleState{};
 volatile LONG gTimingScaleBits{0x3F800000};
 volatile LONG* gCameraScaleBits{};
+volatile LONG* gAimCameraCallCount{};
 volatile LONG* gGrassWindCallCount{};
 volatile LONG gMotionDeltaCallCount{};
 volatile LONG gInputUpdateCallCount{};
@@ -575,6 +586,12 @@ struct GrassWindPatch
     std::array<std::uint8_t, kGrassWindScaleBlockSize> bytes{};
 };
 
+struct AimCameraPatch
+{
+    std::uint8_t* address{};
+    std::array<std::uint8_t, kAimCameraScaleBlockSize> bytes{};
+};
+
 struct TimingHookResources
 {
     std::uint8_t* code{};
@@ -583,12 +600,14 @@ struct TimingHookResources
     std::uint8_t* inputRelay{};
     std::uint8_t* cameraStub{};
     std::uint8_t* grassWindStub{};
+    std::uint8_t* aimCameraStub{};
 };
 
 struct OptionalTimingPatches
 {
     OptionalPatchStatus animation{OptionalPatchStatus::pending};
     OptionalPatchStatus camera{OptionalPatchStatus::pending};
+    OptionalPatchStatus aimCamera{OptionalPatchStatus::pending};
     OptionalPatchStatus vegetation{OptionalPatchStatus::pending};
     OptionalPatchStatus menu{OptionalPatchStatus::pending};
     TimingHookResources resources{};
@@ -596,6 +615,7 @@ struct OptionalTimingPatches
     RelativePatch inputCall{};
     CameraPatch cameraBlock{};
     GrassWindPatch grassWindBlock{};
+    AimCameraPatch aimCameraBlock{};
 };
 
 bool IsRelativeReachable(const void* instructionEnd, const void* destination)
@@ -708,6 +728,7 @@ bool EnsureTimingHookResources(const PeImage& image,
     resources.inputRelay = code + 16;
     resources.cameraStub = code + 64;
     resources.grassWindStub = code + 128;
+    resources.aimCameraStub = code + 192;
 
     const auto motionJump =
         MakeAbsoluteJump(reinterpret_cast<const void*>(&GetNormalizedMotionDelta));
@@ -718,6 +739,7 @@ bool EnsureTimingHookResources(const PeImage& image,
     *reinterpret_cast<LONG*>(resources.data) =
         FloatBits(ReadTimingScale());
     *reinterpret_cast<LONG*>(resources.data + sizeof(LONG)) = 0;
+    *reinterpret_cast<LONG*>(resources.data + 2 * sizeof(LONG)) = 0;
 
     DWORD oldProtection{};
     if (!VirtualProtect(code, 4096, PAGE_EXECUTE_READ, &oldProtection)) {
@@ -731,6 +753,8 @@ bool EnsureTimingHookResources(const PeImage& image,
     gCameraScaleBits = reinterpret_cast<volatile LONG*>(data);
     gGrassWindCallCount =
         reinterpret_cast<volatile LONG*>(data + sizeof(LONG));
+    gAimCameraCallCount =
+        reinterpret_cast<volatile LONG*>(data + 2 * sizeof(LONG));
     return true;
 }
 
@@ -962,6 +986,119 @@ OptionalPatchStatus TryInstallCameraTiming(
     patches.cameraBlock.address = block;
     Log("Scaled the verified gameplay camera's controller and mouse input "
         "by the presentation interval.");
+    return OptionalPatchStatus::installed;
+}
+
+OptionalPatchStatus TryInstallAimCameraTiming(
+    const PeImage& image,
+    OptionalTimingPatches& patches)
+{
+    const auto camera = FindCodePattern(
+        image, std::span<const std::uint8_t>(kAimCameraInputSignature));
+    if (camera.count > 1) {
+        Log("The aiming-camera signature was ambiguous; aiming sensitivity "
+            "normalization was not installed.");
+        return OptionalPatchStatus::unavailable;
+    }
+    if (camera.count == 0) {
+        return OptionalPatchStatus::pending;
+    }
+    if (!EnsureTimingHookResources(image, patches.resources)) {
+        return OptionalPatchStatus::unavailable;
+    }
+
+    auto* block = camera.address + kAimCameraScaleBlockOffset;
+    auto* continuation = block + kAimCameraScaleBlockSize;
+    auto* stub = patches.resources.aimCameraStub;
+    std::array<std::uint8_t, 36> stubBytes{};
+    std::memcpy(stubBytes.data(), block, kAimCameraScaleBlockSize);
+
+    const std::array<std::uint8_t, 8> multiplyXmm3{
+        0xF3, 0x0F, 0x59, 0x1D, 0, 0, 0, 0,
+    };
+    const std::array<std::uint8_t, 8> multiplyXmm4{
+        0xF3, 0x0F, 0x59, 0x25, 0, 0, 0, 0,
+    };
+    const std::array<std::uint8_t, 7> incrementCounter{
+        0xF0, 0xFF, 0x05, 0, 0, 0, 0,
+    };
+    std::memcpy(stubBytes.data() + 8,
+                multiplyXmm3.data(),
+                multiplyXmm3.size());
+    std::memcpy(stubBytes.data() + 16,
+                multiplyXmm4.data(),
+                multiplyXmm4.size());
+    std::memcpy(stubBytes.data() + 24,
+                incrementCounter.data(),
+                incrementCounter.size());
+
+    auto* scale = patches.resources.data;
+    auto* counter = patches.resources.data + 2 * sizeof(LONG);
+    if (!IsRelativeReachable(stub + 16, scale) ||
+        !IsRelativeReachable(stub + 24, scale) ||
+        !IsRelativeReachable(stub + 31, counter)) {
+        Log("The aiming-camera stub could not reach its timing data.");
+        return OptionalPatchStatus::unavailable;
+    }
+    const auto firstScaleDisplacement = static_cast<std::int32_t>(
+        reinterpret_cast<std::intptr_t>(scale) -
+        reinterpret_cast<std::intptr_t>(stub + 16));
+    const auto secondScaleDisplacement = static_cast<std::int32_t>(
+        reinterpret_cast<std::intptr_t>(scale) -
+        reinterpret_cast<std::intptr_t>(stub + 24));
+    const auto counterDisplacement = static_cast<std::int32_t>(
+        reinterpret_cast<std::intptr_t>(counter) -
+        reinterpret_cast<std::intptr_t>(stub + 31));
+    std::memcpy(stubBytes.data() + 12,
+                &firstScaleDisplacement,
+                sizeof(firstScaleDisplacement));
+    std::memcpy(stubBytes.data() + 20,
+                &secondScaleDisplacement,
+                sizeof(secondScaleDisplacement));
+    std::memcpy(stubBytes.data() + 27,
+                &counterDisplacement,
+                sizeof(counterDisplacement));
+
+    stubBytes[31] = 0xE9;
+    if (!IsRelativeReachable(stub + 36, continuation)) {
+        Log("The aiming-camera stub could not reach its continuation.");
+        return OptionalPatchStatus::unavailable;
+    }
+    const auto continuationDisplacement = static_cast<std::int32_t>(
+        reinterpret_cast<std::intptr_t>(continuation) -
+        reinterpret_cast<std::intptr_t>(stub + 36));
+    std::memcpy(stubBytes.data() + 32,
+                &continuationDisplacement,
+                sizeof(continuationDisplacement));
+    if (!WriteExecutableRegion(stub, stubBytes)) {
+        Log("Could not write the aiming-camera timing stub.");
+        return OptionalPatchStatus::unavailable;
+    }
+
+    std::array<std::uint8_t, kAimCameraScaleBlockSize> original{};
+    std::memcpy(original.data(), block, original.size());
+    patches.aimCameraBlock.bytes.fill(0x90);
+    patches.aimCameraBlock.bytes[0] = 0xE9;
+    if (!IsRelativeReachable(block + 5, stub)) {
+        Log("The aiming-camera timing branch could not reach its verified "
+            "stub.");
+        return OptionalPatchStatus::unavailable;
+    }
+    const auto stubDisplacement = static_cast<std::int32_t>(
+        reinterpret_cast<std::intptr_t>(stub) -
+        reinterpret_cast<std::intptr_t>(block + 5));
+    std::memcpy(patches.aimCameraBlock.bytes.data() + 1,
+                &stubDisplacement,
+                sizeof(stubDisplacement));
+    if (!PatchCode(block,
+                   original,
+                   patches.aimCameraBlock.bytes,
+                   "the aiming-camera input scale")) {
+        return OptionalPatchStatus::unavailable;
+    }
+    patches.aimCameraBlock.address = block;
+    Log("Scaled the verified firearm and bow aiming camera input by the "
+        "presentation interval.");
     return OptionalPatchStatus::installed;
 }
 
@@ -1361,6 +1498,19 @@ bool MonitorRuntimePatches(const PeImage& image,
             return false;
         }
 
+        if (optionalPatches.aimCamera == OptionalPatchStatus::pending) {
+            optionalPatches.aimCamera =
+                TryInstallAimCameraTiming(image, optionalPatches);
+        } else if (
+            optionalPatches.aimCamera == OptionalPatchStatus::installed &&
+            (!optionalPatches.aimCameraBlock.address ||
+             std::memcmp(optionalPatches.aimCameraBlock.address,
+                         optionalPatches.aimCameraBlock.bytes.data(),
+                         optionalPatches.aimCameraBlock.bytes.size()) != 0)) {
+            Log("The aiming-camera timing block changed unexpectedly.");
+            return false;
+        }
+
         if (optionalPatches.vegetation == OptionalPatchStatus::pending) {
             optionalPatches.vegetation =
                 TryInstallVegetationTiming(image, optionalPatches);
@@ -1419,6 +1569,8 @@ bool MonitorRuntimePatches(const PeImage& image,
                                 : ReadTimingScale() / 120.0F)
                         << ", animation_delta_calls="
                         << gMotionDeltaCallCount
+                        << ", aim_camera_updates="
+                        << ReadHookCounter(gAimCameraCallCount)
                         << ", grass_wind_updates="
                         << ReadHookCounter(gGrassWindCallCount)
                         << ", input_updates=" << gInputUpdateCallCount
@@ -1488,6 +1640,10 @@ bool MonitorRuntimePatches(const PeImage& image,
                    : "baseline")
            << ", camera_input="
            << (optionalPatches.camera == OptionalPatchStatus::installed
+                   ? "normalized"
+                   : "baseline")
+           << ", aiming_camera_input="
+           << (optionalPatches.aimCamera == OptionalPatchStatus::installed
                    ? "normalized"
                    : "baseline")
            << ", menu_input="
