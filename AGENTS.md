@@ -3,8 +3,10 @@
 ## Goal and Current State
 
 Nioh1Fix unlocks Nioh: Complete Edition on Linux/Proton and compensates
-Katana Engine gameplay timing dynamically. Version 1.4.0 has been validated at
-130 FPS and while changing external framerate caps during gameplay.
+Katana Engine gameplay timing dynamically. Version 1.5.0 has been validated at
+130 FPS and while changing external framerate caps during gameplay. Player and
+ordinary enemy animation, grass and bush wind, normal and aiming camera
+sensitivity, menu navigation, and firearm input are validated.
 
 Do not replace the working implementation with an earlier experimental
 approach without new evidence.
@@ -81,6 +83,17 @@ returns `2 * TargetFPS`. Profiles 1 and 2 return the stock 30.
 This empirical factor of two is required. Returning measured FPS improved but
 did not fully correct speed. Returning 60 made animation much faster.
 
+Separate unique-signature hooks scale three motion-component paths, normal
+camera input, firearm/bow aiming input, and grass/bush wind animation by the
+measured presentation interval. A 60 Hz cadence gate clears only transient and
+repeat input masks on skipped samples; the original input update still runs
+every render frame.
+
+Normal aggressive enemies confirmed correct idle, locomotion, blocking, and
+attack animation timing. Passive tutorial enemies had been mistaken for a
+remaining pathfinding-speed issue. Do not add a broad enemy or AI update hook
+without new evidence; previous experiments regressed firearm and menu input.
+
 ## Important RVAs
 
 - Frame profile table: `0x017AA8D8`
@@ -91,6 +104,10 @@ did not fully correct speed. Returning 60 made animation much faster.
 - Present dispatch: `0x002B220C`
 - Original Present sync load: `0x002B2231`
 - Frame controller: `0x019301D0`
+- Normal camera scale block: `0x00853457`
+- Aiming camera scale block: `0x0085E429`
+- Grass and bush wind scale block: `0x0099105C`
+- Input cadence call: `0x00FABFA0`
 
 Runtime patching must continue using unique full signatures. Do not patch bare
 RVAs without signature and PE verification.

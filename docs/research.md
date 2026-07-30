@@ -69,6 +69,36 @@ interval, it returns `2 * TargetFPS`.
 
 The two 30 FPS profiles bypass dynamic compensation and return 30.
 
+## Component Timing and Input
+
+The dynamic gameplay divisor corrects the player and the verified shared
+motion-component paths. Additional narrowly scoped corrections are required
+for systems that consume per-render values directly:
+
+- Three motion-component delta calls use the measured presentation scale.
+- Normal gameplay camera axes are scaled at RVA `0x00853457`.
+- Firearm and bow aiming-camera axes are scaled at RVA `0x0085E429`.
+- The grass and bush wind phase is scaled at RVA `0x0099105C`.
+- Transient pressed, released, and repeat input state is exposed at the
+  original 60 Hz cadence through the call at RVA `0x00FABFA0`.
+
+Each location is found through a unique full signature. The RVAs above are
+diagnostic references, not unverified patch targets. The timing scale is
+bounded during startup, cap changes, jitter, and stalls; stock 30 FPS profiles
+use a scale of one.
+
+The input cadence gate calls the original input update every render frame.
+Only transient and repeat masks are cleared on skipped cadence samples. This
+preserves analog state and firearm trigger handling while preventing one D-pad
+press from producing several menu transitions.
+
+Testing initially suggested that enemy movement needed another pathfinding
+hook. Those observations came from passive tutorial enemies. Normal aggressive
+enemies later confirmed that idle, movement, blocking, and attack animation
+timing are already corrected by the validated gameplay and motion-component
+paths. No additional AI, pathfinding, physics, attack, or invulnerability hook
+is installed.
+
 ## Runtime Patching
 
 SteamStub decrypts code after the ASI starts. Nioh1Fix monitors for 30 seconds
@@ -104,6 +134,9 @@ signatures and supported PE metadata.
   animation. Diagnostics showed that value was already a seconds-based delta.
 - Returning a fixed stock 60 from the direct FPS accessor applied compensation
   in the wrong direction and increased animation speed.
+- Experimental broad enemy-update hooks did not improve the tutorial
+  observation and caused firearm or menu regressions. They are not part of the
+  validated implementation.
 
 ## Validation
 
@@ -111,8 +144,12 @@ Validated on Linux with Proton:
 
 - 130 FPS in menus and gameplay.
 - Runtime changes between external FPS caps.
-- Stable visible animation duration in wall-clock seconds across cap changes.
+- Stable player, ordinary enemy, grass, and bush animation duration in
+  wall-clock seconds.
+- Stable normal and firearm/bow aiming-camera sensitivity.
+- One menu step per D-pad press, normal hold-to-repeat behavior, and working
+  firearm input.
 - Clean startup after the final accessor-based implementation.
 
 Areas that still warrant broader regression testing include cutscenes, physics,
-invulnerability timing, enemy AI, focus loss, and sustained uneven frame times.
+invulnerability timing, focus loss, and sustained uneven frame times.
