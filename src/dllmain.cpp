@@ -132,6 +132,33 @@ constexpr std::array<std::uint8_t, 96> kStatisticalOceanUpdateSignature{
     0x10, 0x0F, 0x29, 0x74, 0x24, 0x30, 0x0F, 0x28, 0xF1, 0x4A, 0x8B, 0x14,
     0xC2, 0x0F, 0xAF, 0xD8, 0xE8, 0xD3, 0x34, 0xF3, 0xFF, 0x8B, 0x8E, 0x24,
 };
+constexpr std::array<std::uint8_t, 96> kCloudPlaneUpdateSignature{
+    0x48, 0x83, 0xEC, 0x38, 0xF3, 0x0F, 0x10, 0x59, 0x78, 0x0F, 0x28, 0xE1,
+    0xF3, 0x0F, 0x10, 0x49, 0x74, 0x0F, 0x2F, 0xD9, 0x76, 0x11, 0x0F, 0x28,
+    0xD4, 0xF3, 0x0F, 0x59, 0x51, 0x7C, 0xF3, 0x0F, 0x58, 0xD1, 0x0F, 0x2F,
+    0xD3, 0xEB, 0x17, 0x0F, 0x2F, 0xCB, 0x0F, 0x28, 0xD1, 0x76, 0x1E, 0x0F,
+    0x28, 0xC4, 0xF3, 0x0F, 0x59, 0x41, 0x7C, 0xF3, 0x0F, 0x5C, 0xD0, 0x0F,
+    0x2F, 0xDA, 0xF3, 0x0F, 0x11, 0x51, 0x74, 0x72, 0x08, 0xF3, 0x0F, 0x11,
+    0x59, 0x74, 0x0F, 0x28, 0xD3, 0x0F, 0x57, 0xC0, 0x0F, 0x2F, 0xD0, 0x0F,
+    0x86, 0x0A, 0x03, 0x00, 0x00, 0xF3, 0x0F, 0x10, 0x89, 0xA0, 0x00, 0x00,
+};
+constexpr std::array<std::uint8_t, 59> kCloudCircleUpdateSignature{
+    0x0F, 0x57, 0x0D, 0x39, 0xE3, 0x1D, 0x01, 0x0F, 0x28, 0xC1, 0xF3, 0x0F,
+    0x59, 0x81, 0xD0, 0x00, 0x00, 0x00, 0xF3, 0x0F, 0x58, 0x81, 0xC8, 0x00,
+    0x00, 0x00, 0xF3, 0x0F, 0x11, 0x81, 0xC8, 0x00, 0x00, 0x00, 0xF3, 0x0F,
+    0x59, 0x89, 0xD4, 0x00, 0x00, 0x00, 0xF3, 0x0F, 0x58, 0x89, 0xCC, 0x00,
+    0x00, 0x00, 0xF3, 0x0F, 0x11, 0x89, 0xCC, 0x00, 0x00, 0x00, 0xC3,
+};
+constexpr std::array<std::uint8_t, 96> kCloudParticleUpdateSignature{
+    0x48, 0x8B, 0xC4, 0x53, 0x55, 0x57, 0x41, 0x54, 0x41, 0x55, 0x48, 0x81,
+    0xEC, 0xD0, 0x00, 0x00, 0x00, 0x44, 0x0F, 0x29, 0x48, 0x98, 0x45, 0x33,
+    0xE4, 0xF3, 0x44, 0x0F, 0x10, 0x0D, 0xCE, 0x99, 0x1D, 0x01, 0x48, 0x8B,
+    0xD9, 0x44, 0x0F, 0x29, 0x50, 0x88, 0x0F, 0x57, 0xC0, 0x8B, 0x81, 0x7C,
+    0x01, 0x00, 0x00, 0x44, 0x0F, 0x29, 0x5C, 0x24, 0x70, 0x44, 0x0F, 0x29,
+    0x64, 0x24, 0x60, 0x44, 0x0F, 0x28, 0xE1, 0x44, 0x0F, 0x29, 0x6C, 0x24,
+    0x50, 0x44, 0x0F, 0x29, 0x74, 0x24, 0x40, 0x39, 0x81, 0x80, 0x01, 0x00,
+    0x00, 0x76, 0x1A, 0x69, 0x81, 0x6C, 0x01, 0x00, 0x00, 0xCD, 0x0D, 0x01,
+};
 constexpr std::size_t kMotionSlotsCallOffset = 21;
 constexpr std::size_t kLinkedMotionCallOffset = 32;
 constexpr std::size_t kMotionComponentCallOffset = 14;
@@ -145,6 +172,9 @@ constexpr std::size_t kGrassWindScaleBlockSize = 9;
 constexpr std::size_t kSclAnimationScaleBlockOffset = 30;
 constexpr std::size_t kSclAnimationScaleBlockSize = 9;
 constexpr std::size_t kStatisticalOceanScaleBlockSize = 5;
+constexpr std::size_t kCloudPlaneScaleBlockSize = 9;
+constexpr std::size_t kCloudCircleScaleBlockSize = 7;
+constexpr std::size_t kCloudParticleScaleBlockSize = 5;
 constexpr std::size_t kInputPlayerCount = 4;
 constexpr std::size_t kInputPlayerStride = 0x1C0;
 constexpr std::size_t kInputPressedMaskOffset = 0x30;
@@ -171,6 +201,9 @@ volatile LONG* gAimCameraCallCount{};
 volatile LONG* gGrassWindCallCount{};
 volatile LONG* gSclAnimationStepCount{};
 volatile LONG* gStatisticalOceanUpdateCount{};
+volatile LONG* gCloudPlaneUpdateCount{};
+volatile LONG* gCloudCircleUpdateCount{};
+volatile LONG* gCloudParticleUpdateCount{};
 volatile LONG gMotionDeltaCallCount{};
 volatile LONG gInputUpdateCallCount{};
 volatile LONG gInputAcceptedCount{};
@@ -628,6 +661,13 @@ struct StatisticalOceanPatch
     std::array<std::uint8_t, kStatisticalOceanScaleBlockSize> bytes{};
 };
 
+template <std::size_t Size>
+struct CloudAnimationPatch
+{
+    std::uint8_t* address{};
+    std::array<std::uint8_t, Size> bytes{};
+};
+
 struct TimingHookResources
 {
     std::uint8_t* code{};
@@ -639,6 +679,9 @@ struct TimingHookResources
     std::uint8_t* aimCameraStub{};
     std::uint8_t* sclAnimationStub{};
     std::uint8_t* statisticalOceanStub{};
+    std::uint8_t* cloudPlaneStub{};
+    std::uint8_t* cloudCircleStub{};
+    std::uint8_t* cloudParticleStub{};
 };
 
 struct OptionalTimingPatches
@@ -649,6 +692,9 @@ struct OptionalTimingPatches
     OptionalPatchStatus vegetation{OptionalPatchStatus::pending};
     OptionalPatchStatus interfaceAnimation{OptionalPatchStatus::pending};
     OptionalPatchStatus waterAnimation{OptionalPatchStatus::pending};
+    OptionalPatchStatus cloudPlaneAnimation{OptionalPatchStatus::pending};
+    OptionalPatchStatus cloudCircleAnimation{OptionalPatchStatus::pending};
+    OptionalPatchStatus cloudParticleAnimation{OptionalPatchStatus::pending};
     OptionalPatchStatus menu{OptionalPatchStatus::pending};
     TimingHookResources resources{};
     std::array<RelativePatch, 3> animationCalls{};
@@ -658,6 +704,9 @@ struct OptionalTimingPatches
     AimCameraPatch aimCameraBlock{};
     SclAnimationPatch sclAnimationBlock{};
     StatisticalOceanPatch statisticalOceanBlock{};
+    CloudAnimationPatch<kCloudPlaneScaleBlockSize> cloudPlaneBlock{};
+    CloudAnimationPatch<kCloudCircleScaleBlockSize> cloudCircleBlock{};
+    CloudAnimationPatch<kCloudParticleScaleBlockSize> cloudParticleBlock{};
 };
 
 bool IsRelativeReachable(const void* instructionEnd, const void* destination)
@@ -773,6 +822,9 @@ bool EnsureTimingHookResources(const PeImage& image,
     resources.aimCameraStub = code + 192;
     resources.sclAnimationStub = code + 256;
     resources.statisticalOceanStub = code + 320;
+    resources.cloudPlaneStub = code + 384;
+    resources.cloudCircleStub = code + 448;
+    resources.cloudParticleStub = code + 512;
 
     const auto motionJump =
         MakeAbsoluteJump(reinterpret_cast<const void*>(&GetNormalizedMotionDelta));
@@ -786,6 +838,9 @@ bool EnsureTimingHookResources(const PeImage& image,
     *reinterpret_cast<LONG*>(resources.data + 2 * sizeof(LONG)) = 0;
     *reinterpret_cast<LONG*>(resources.data + 3 * sizeof(LONG)) = 0;
     *reinterpret_cast<LONG*>(resources.data + 4 * sizeof(LONG)) = 0;
+    *reinterpret_cast<LONG*>(resources.data + 5 * sizeof(LONG)) = 0;
+    *reinterpret_cast<LONG*>(resources.data + 6 * sizeof(LONG)) = 0;
+    *reinterpret_cast<LONG*>(resources.data + 7 * sizeof(LONG)) = 0;
 
     DWORD oldProtection{};
     if (!VirtualProtect(code, 4096, PAGE_EXECUTE_READ, &oldProtection)) {
@@ -805,6 +860,12 @@ bool EnsureTimingHookResources(const PeImage& image,
         reinterpret_cast<volatile LONG*>(data + 3 * sizeof(LONG));
     gStatisticalOceanUpdateCount =
         reinterpret_cast<volatile LONG*>(data + 4 * sizeof(LONG));
+    gCloudPlaneUpdateCount =
+        reinterpret_cast<volatile LONG*>(data + 5 * sizeof(LONG));
+    gCloudCircleUpdateCount =
+        reinterpret_cast<volatile LONG*>(data + 6 * sizeof(LONG));
+    gCloudParticleUpdateCount =
+        reinterpret_cast<volatile LONG*>(data + 7 * sizeof(LONG));
     return true;
 }
 
@@ -1454,6 +1515,130 @@ OptionalPatchStatus TryInstallStatisticalOceanTiming(
     return OptionalPatchStatus::installed;
 }
 
+template <std::size_t SignatureSize, std::size_t BlockSize>
+OptionalPatchStatus TryInstallCloudAnimationTiming(
+    const PeImage& image,
+    const std::array<std::uint8_t, SignatureSize>& signature,
+    TimingHookResources& resources,
+    std::uint8_t*& stub,
+    std::size_t counterOffset,
+    CloudAnimationPatch<BlockSize>& patch,
+    const char* name)
+{
+    const auto update = FindCodePattern(
+        image, std::span<const std::uint8_t>(signature));
+    if (update.count > 1) {
+        std::ostringstream message;
+        message << "The " << name << " update signature was ambiguous; "
+                << "its animation normalization was not installed.";
+        Log(message.str());
+        return OptionalPatchStatus::unavailable;
+    }
+    if (update.count == 0) {
+        return OptionalPatchStatus::pending;
+    }
+    if (!EnsureTimingHookResources(image, resources)) {
+        return OptionalPatchStatus::unavailable;
+    }
+
+    auto* block = update.address;
+    auto* continuation = block + BlockSize;
+    std::array<std::uint8_t, BlockSize + 20> stubBytes{};
+    std::memcpy(stubBytes.data(), block, BlockSize);
+
+    const std::array<std::uint8_t, 8> multiplyXmm1{
+        0xF3, 0x0F, 0x59, 0x0D, 0, 0, 0, 0,
+    };
+    const std::array<std::uint8_t, 7> incrementCounter{
+        0xF0, 0xFF, 0x05, 0, 0, 0, 0,
+    };
+    std::memcpy(stubBytes.data() + BlockSize,
+                multiplyXmm1.data(),
+                multiplyXmm1.size());
+    std::memcpy(stubBytes.data() + BlockSize + 8,
+                incrementCounter.data(),
+                incrementCounter.size());
+
+    auto* scale = resources.data;
+    auto* counter = resources.data + counterOffset;
+    if (!IsRelativeReachable(stub + BlockSize + 8, scale) ||
+        !IsRelativeReachable(stub + BlockSize + 15, counter)) {
+        std::ostringstream message;
+        message << "The " << name
+                << " animation stub could not reach its timing data.";
+        Log(message.str());
+        return OptionalPatchStatus::unavailable;
+    }
+    const auto scaleDisplacement = static_cast<std::int32_t>(
+        reinterpret_cast<std::intptr_t>(scale) -
+        reinterpret_cast<std::intptr_t>(stub + BlockSize + 8));
+    const auto counterDisplacement = static_cast<std::int32_t>(
+        reinterpret_cast<std::intptr_t>(counter) -
+        reinterpret_cast<std::intptr_t>(stub + BlockSize + 15));
+    std::memcpy(stubBytes.data() + BlockSize + 4,
+                &scaleDisplacement,
+                sizeof(scaleDisplacement));
+    std::memcpy(stubBytes.data() + BlockSize + 11,
+                &counterDisplacement,
+                sizeof(counterDisplacement));
+
+    stubBytes[BlockSize + 15] = 0xE9;
+    if (!IsRelativeReachable(stub + BlockSize + 20, continuation)) {
+        std::ostringstream message;
+        message << "The " << name
+                << " animation stub could not reach its continuation.";
+        Log(message.str());
+        return OptionalPatchStatus::unavailable;
+    }
+    const auto continuationDisplacement = static_cast<std::int32_t>(
+        reinterpret_cast<std::intptr_t>(continuation) -
+        reinterpret_cast<std::intptr_t>(stub + BlockSize + 20));
+    std::memcpy(stubBytes.data() + BlockSize + 16,
+                &continuationDisplacement,
+                sizeof(continuationDisplacement));
+    if (!WriteExecutableRegion(stub, stubBytes)) {
+        std::ostringstream message;
+        message << "Could not write the " << name << " animation stub.";
+        Log(message.str());
+        return OptionalPatchStatus::unavailable;
+    }
+
+    std::array<std::uint8_t, BlockSize> original{};
+    std::memcpy(original.data(), block, original.size());
+    patch.bytes.fill(0x90);
+    patch.bytes[0] = 0xE9;
+    if (!IsRelativeReachable(block + 5, stub)) {
+        std::ostringstream message;
+        message << "The " << name
+                << " timing branch could not reach its verified stub.";
+        Log(message.str());
+        return OptionalPatchStatus::unavailable;
+    }
+    const auto stubDisplacement = static_cast<std::int32_t>(
+        reinterpret_cast<std::intptr_t>(stub) -
+        reinterpret_cast<std::intptr_t>(block + 5));
+    std::memcpy(patch.bytes.data() + 1,
+                &stubDisplacement,
+                sizeof(stubDisplacement));
+
+    std::ostringstream description;
+    description << "the " << name << " animation update delta";
+    const auto descriptionText = description.str();
+    if (!PatchCode(block,
+                   original,
+                   patch.bytes,
+                   descriptionText.c_str())) {
+        return OptionalPatchStatus::unavailable;
+    }
+    patch.address = block;
+
+    std::ostringstream message;
+    message << "Scaled the verified " << name
+            << " animation update by the presentation interval.";
+    Log(message.str());
+    return OptionalPatchStatus::installed;
+}
+
 struct GameplayFpsPatch
 {
     std::uint8_t* address{};
@@ -1807,6 +1992,73 @@ bool MonitorRuntimePatches(const PeImage& image,
             return false;
         }
 
+        if (optionalPatches.cloudPlaneAnimation ==
+            OptionalPatchStatus::pending) {
+            optionalPatches.cloudPlaneAnimation =
+                TryInstallCloudAnimationTiming(
+                    image,
+                    kCloudPlaneUpdateSignature,
+                    optionalPatches.resources,
+                    optionalPatches.resources.cloudPlaneStub,
+                    5 * sizeof(LONG),
+                    optionalPatches.cloudPlaneBlock,
+                    "cloud-plane");
+        } else if (
+            optionalPatches.cloudPlaneAnimation ==
+                OptionalPatchStatus::installed &&
+            (!optionalPatches.cloudPlaneBlock.address ||
+             std::memcmp(optionalPatches.cloudPlaneBlock.address,
+                         optionalPatches.cloudPlaneBlock.bytes.data(),
+                         optionalPatches.cloudPlaneBlock.bytes.size()) != 0)) {
+            Log("The cloud-plane timing block changed unexpectedly.");
+            return false;
+        }
+
+        if (optionalPatches.cloudCircleAnimation ==
+            OptionalPatchStatus::pending) {
+            optionalPatches.cloudCircleAnimation =
+                TryInstallCloudAnimationTiming(
+                    image,
+                    kCloudCircleUpdateSignature,
+                    optionalPatches.resources,
+                    optionalPatches.resources.cloudCircleStub,
+                    6 * sizeof(LONG),
+                    optionalPatches.cloudCircleBlock,
+                    "cloud-circle");
+        } else if (
+            optionalPatches.cloudCircleAnimation ==
+                OptionalPatchStatus::installed &&
+            (!optionalPatches.cloudCircleBlock.address ||
+             std::memcmp(optionalPatches.cloudCircleBlock.address,
+                         optionalPatches.cloudCircleBlock.bytes.data(),
+                         optionalPatches.cloudCircleBlock.bytes.size()) != 0)) {
+            Log("The cloud-circle timing block changed unexpectedly.");
+            return false;
+        }
+
+        if (optionalPatches.cloudParticleAnimation ==
+            OptionalPatchStatus::pending) {
+            optionalPatches.cloudParticleAnimation =
+                TryInstallCloudAnimationTiming(
+                    image,
+                    kCloudParticleUpdateSignature,
+                    optionalPatches.resources,
+                    optionalPatches.resources.cloudParticleStub,
+                    7 * sizeof(LONG),
+                    optionalPatches.cloudParticleBlock,
+                    "cloud-particle");
+        } else if (
+            optionalPatches.cloudParticleAnimation ==
+                OptionalPatchStatus::installed &&
+            (!optionalPatches.cloudParticleBlock.address ||
+             std::memcmp(optionalPatches.cloudParticleBlock.address,
+                         optionalPatches.cloudParticleBlock.bytes.data(),
+                         optionalPatches.cloudParticleBlock.bytes.size()) !=
+                 0)) {
+            Log("The cloud-particle timing block changed unexpectedly.");
+            return false;
+        }
+
         if (optionalPatches.menu == OptionalPatchStatus::pending) {
             optionalPatches.menu =
                 TryInstallInputCadence(image, optionalPatches);
@@ -1860,6 +2112,12 @@ bool MonitorRuntimePatches(const PeImage& image,
                         << ReadHookCounter(gSclAnimationStepCount)
                         << ", statistical_ocean_updates="
                         << ReadHookCounter(gStatisticalOceanUpdateCount)
+                        << ", cloud_plane_updates="
+                        << ReadHookCounter(gCloudPlaneUpdateCount)
+                        << ", cloud_circle_updates="
+                        << ReadHookCounter(gCloudCircleUpdateCount)
+                        << ", cloud_particle_updates="
+                        << ReadHookCounter(gCloudParticleUpdateCount)
                         << ", input_updates=" << gInputUpdateCallCount
                         << ", input_accepted=" << gInputAcceptedCount
                         << ", input_skipped=" << gInputSkippedCount;
@@ -1932,6 +2190,15 @@ bool MonitorRuntimePatches(const PeImage& image,
                    : "baseline")
            << ", water_animation="
            << (optionalPatches.waterAnimation == OptionalPatchStatus::installed
+                   ? "normalized"
+                   : "baseline")
+           << ", cloud_animation="
+           << (optionalPatches.cloudPlaneAnimation ==
+                           OptionalPatchStatus::installed &&
+                       optionalPatches.cloudCircleAnimation ==
+                           OptionalPatchStatus::installed &&
+                       optionalPatches.cloudParticleAnimation ==
+                           OptionalPatchStatus::installed
                    ? "normalized"
                    : "baseline")
            << ", camera_input="
