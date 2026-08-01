@@ -16,8 +16,8 @@ LONG Counter(std::size_t index) {
     return g.timingData ? InterlockedCompareExchange(g.timingData + index, 0, 0) : 0;
 }
 bool IsThirtyFpsProfile() {
-    if (!g.imageBase) return false;
-    const LONG profile = *reinterpret_cast<volatile LONG*>(g.imageBase + kActiveProfileRva);
+    if (!g.activeProfile) return false;
+    const LONG profile = *g.activeProfile;
     return profile == 1 || profile == 2;
 }
 static void PublishTimingScale(double scale) {
@@ -105,18 +105,13 @@ float GetGameplayReferenceFps() {
 }
 
 void LogDiagnostics(std::uint8_t* table, DWORD elapsed) {
-    const LONG profile = *reinterpret_cast<volatile LONG*>(g.imageBase + kActiveProfileRva);
-    const LONG current = *reinterpret_cast<volatile LONG*>(
-        g.imageBase + kFrameControllerRva + kCurrentFrameOffset);
-    const LONG completed = *reinterpret_cast<volatile LONG*>(
-        g.imageBase + kFrameControllerRva + kCompletedFrameOffset);
+    const LONG profile = g.activeProfile ? *g.activeProfile : -1;
     std::ostringstream out; out << "Frame diagnostics at " << elapsed
         << " ms: active_profile=" << profile << ", active_target=";
     if (profile >= 0 && profile < 4)
         out << *reinterpret_cast<volatile float*>(table + std::size_t(profile) * 12);
     else out << "unavailable";
-    out << ", engine_fps=" << completed << ", current_frame_count=" << current
-        << ", present_calls=" << g.presentCalls << ", present_would_block="
+    out << ", present_calls=" << g.presentCalls << ", present_would_block="
         << g.presentWouldBlock << ", present_failures=" << g.presentFailures
         << ", gameplay_reference_fps=" << GetGameplayReferenceFps()
         << ", timing_scale=" << ReadTimingScale() << ", animation_delta="

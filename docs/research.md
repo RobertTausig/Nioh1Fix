@@ -3,7 +3,7 @@
 ## Examined Build
 
 - Product: Nioh: Complete Edition
-- Game version: v1.24.07
+- ProductVersion: 1.24.8.0
 - PE timestamp: `0x6307ABD5`
 - PE image size: `0x0306E000`
 - Packed executable SHA-256:
@@ -90,10 +90,11 @@ for systems that consume per-render values directly:
 - Transient pressed, released, and repeat input state is exposed at the
   original 60 Hz cadence through the call at RVA `0x00FABFA0`.
 
-Each location is found through a unique full signature. The RVAs above are
-diagnostic references, not unverified patch targets. The timing scale is
-bounded during startup, cap changes, jitter, and stalls; stock 30 FPS profiles
-use a scale of one.
+Each location is found through a unique relocation-aware signature. Fixed
+instruction and operand bytes must match; only audited RIP-relative and call
+displacements are wildcarded. The RVAs above are diagnostic references, not
+patch targets. The timing scale is bounded during startup, cap changes, jitter,
+and stalls; stock 30 FPS profiles use a scale of one.
 
 The input cadence gate calls the original input update every render frame.
 Only transient and repeat masks are cleared on skipped cadence samples. This
@@ -110,8 +111,16 @@ is installed.
 ## Runtime Patching
 
 SteamStub decrypts code after the ASI starts. Nioh1Fix monitors for 30 seconds
-at 250 ms intervals, locates full byte signatures in executable sections, and
-requires unique matches before patching.
+at 250 ms intervals. Before the first write, it must uniquely locate every
+required code path in executable sections. It then derives and validates the
+frame-profile table, active-profile index, shared motion target, input-update
+target and mask layout, and every overwrite block.
+
+The known timestamp and image size identify the runtime-validated Steam build
+for diagnostics; they are not a compatibility gate. An unknown build proceeds
+only when the complete plan validates. Resolved addresses remain process-local
+and are not persisted as generated RVAs. This supports automatic relocation of
+unchanged code, not automatic reverse engineering of changed code.
 
 The frame-profile table is also monitored. If it returns to the exact original
 state, the internal 120 FPS target is reapplied. Any unexpected table state stops
@@ -133,8 +142,8 @@ Relevant RVAs for the supported build:
 - Cloud-circle update: `0x003ABAB0`
 - Cloud-particle update: `0x003AF180`
 
-RVAs are documentation and diagnostics. Runtime writes use verified full
-signatures and supported PE metadata.
+RVAs and PE metadata are documentation and diagnostics. Runtime writes use the
+fully validated compatibility plan derived from relocation-aware signatures.
 
 ## Rejected Approaches
 

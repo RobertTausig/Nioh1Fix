@@ -40,16 +40,19 @@ approach without new evidence.
 Keep the persistent analysis copy available across reboots. Never modify the
 installed `nioh.exe`.
 
-## Supported Executable
+## Validated Executable
 
 - Filename: `nioh.exe`
-- Steam version: v1.24.07
+- Steam ProductVersion: 1.24.8.0
 - PE timestamp: `0x6307ABD5`
 - Image size: `0x0306E000`
 - SHA-256:
   `56006af3fc0945248aa7a2e33fd95d4e510f1dbe3395eb3644dae3c2806377f6`
 
-Unsupported PE metadata is rejected before patching.
+The timestamp and image size identify this validated build for diagnostics.
+Other x64 `nioh.exe` builds are not rejected by metadata alone. Before any
+write, every required relocation-aware signature and all derived targets and
+layouts must validate uniquely; otherwise no changes are made.
 
 ## Working Timing Model
 
@@ -119,8 +122,10 @@ without new evidence; previous experiments regressed firearm and menu input.
 - Cloud-particle update: `0x003AF180`
 - Input cadence call: `0x00FABFA0`
 
-Runtime patching must continue using unique full signatures. Do not patch bare
-RVAs without signature and PE verification.
+Runtime patching must continue using unique relocation-aware full signatures.
+Only audited address displacements may be wildcarded. Do not patch bare RVAs,
+and do not weaken the complete-plan validation performed before the first
+write.
 
 ## Failed Experiments
 
@@ -192,7 +197,8 @@ speed, then inspect `Nioh1Fix.log`.
 
 - `src/core.hpp`: pure frame-profile and timing-scale logic.
 - `src/runtime.hpp`: shared runtime contracts, state, and constants.
-- `src/signatures.hpp`: declarative full signatures and timing-hook specs.
+- `src/signatures.hpp`: relocation-aware signatures, hook specs, and complete
+  compatibility-plan resolution.
 - `src/platform.cpp`: logging, INI access, PE inspection, search, and writes.
 - `src/timing.cpp`: presentation measurement, callbacks, input, and diagnostics.
 - `src/hooks.cpp`: shared near-memory allocation and block-trampoline builder.
@@ -206,6 +212,6 @@ speed, then inspect `Nioh1Fix.log`.
 - `scripts/package.sh`: Linux packaging and pinned ASI loader.
 - `scripts/package.ps1`: Windows packaging.
 
-Keep the files under `src/` at or below 150 lines each. The native tests
-cover portable profile and timing math. Hook correctness still requires runtime
-validation on the supported executable.
+Keep the files under `src/` at or below 150 lines each. The native tests cover
+portable profile, masked-signature, and timing math. Hook correctness still
+requires runtime validation on the validated executable.

@@ -18,6 +18,33 @@ inline constexpr std::array<std::size_t, 2> kGameplayFpsOffsets{0, 36};
 enum class MatchStatus { not_found, unique, ambiguous };
 enum class ProfileState { original, patched, invalid };
 struct MatchResult { MatchStatus status{}; std::size_t offset{}, count{}; };
+struct BytePattern {
+    std::span<const std::uint8_t> bytes;
+    std::span<const std::uint8_t> mask;
+};
+
+inline bool MatchesPattern(std::span<const std::uint8_t> bytes,
+                           BytePattern pattern) {
+    if (bytes.size() < pattern.bytes.size() ||
+        pattern.bytes.size() != pattern.mask.size()) return false;
+    for (std::size_t i = 0; i < pattern.bytes.size(); ++i)
+        if ((bytes[i] & pattern.mask[i]) !=
+            (pattern.bytes[i] & pattern.mask[i])) return false;
+    return true;
+}
+
+inline MatchResult FindPattern(std::span<const std::uint8_t> bytes,
+                               BytePattern pattern) {
+    MatchResult result{};
+    if (bytes.size() < pattern.bytes.size()) return result;
+    for (std::size_t offset = 0; offset <= bytes.size() - pattern.bytes.size(); ++offset)
+        if (MatchesPattern(bytes.subspan(offset), pattern)) {
+            if (result.count++ == 0) result.offset = offset;
+        }
+    result.status = result.count == 1 ? MatchStatus::unique :
+                    result.count > 1 ? MatchStatus::ambiguous : MatchStatus::not_found;
+    return result;
+}
 
 inline MatchResult FindFrameProfileTable(std::span<const std::uint8_t> bytes) {
     MatchResult result{};

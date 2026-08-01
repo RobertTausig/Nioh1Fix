@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cwctype>
 #include <cstring>
-#include <sstream>
 
 namespace nioh1fix::runtime {
 void Log(const std::string& message) {
@@ -18,7 +17,6 @@ std::filesystem::path ModulePath(HMODULE module) {
     buffer.resize(size);
     return buffer;
 }
-
 bool EqualsIgnoreCase(const std::wstring& left, const std::wstring& right) {
     return left.size() == right.size() &&
            std::equal(left.begin(), left.end(), right.begin(),
@@ -54,7 +52,7 @@ PeImage ReadPeImage(HMODULE module) {
 }
 
 static SearchResult FindInSections(const PeImage& image,
-                                   std::span<const std::uint8_t> pattern,
+                                   BytePattern pattern,
                                    DWORD characteristics) {
     SearchResult result{};
     auto* section = IMAGE_FIRST_SECTION(image.headers);
@@ -63,44 +61,40 @@ static SearchResult FindInSections(const PeImage& image,
         if ((section->Characteristics & characteristics) != characteristics) continue;
         const std::size_t rva = section->VirtualAddress;
         const std::size_t size = section->Misc.VirtualSize;
-        if (rva >= imageSize || size > imageSize - rva || size < pattern.size()) continue;
-        for (std::size_t offset = 0; offset <= size - pattern.size(); ++offset) {
-            if (std::memcmp(image.base + rva + offset, pattern.data(), pattern.size()))
-                continue;
-            result.address = image.base + rva + offset;
-            if (++result.count > 1) return result;
-        }
+        if (rva >= imageSize || size > imageSize - rva) continue;
+        const auto found = FindPattern({image.base + rva, size}, pattern);
+        if (found.status == MatchStatus::unique)
+            result.address = image.base + rva + found.offset;
+        result.count += found.count;
+        if (result.count > 1) return result;
     }
     return result;
 }
 
-SearchResult FindCode(const PeImage& image, std::span<const std::uint8_t> pattern) {
+SearchResult FindCode(const PeImage& image, BytePattern pattern) {
     return FindInSections(image, pattern, IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE);
 }
 
-std::uint8_t* FindFrameProfiles(const PeImage& image) {
-    std::uint8_t* match{}; std::size_t count{};
+bool IsImageRange(const PeImage& image, const void* address,
+                  std::size_t size, DWORD characteristics) {
+    const auto target = reinterpret_cast<std::uintptr_t>(address);
     auto* section = IMAGE_FIRST_SECTION(image.headers);
-    const auto imageSize = image.headers->OptionalHeader.SizeOfImage;
     for (WORD i = 0; i < image.headers->FileHeader.NumberOfSections; ++i, ++section) {
-        const DWORD flags = IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ;
-        if ((section->Characteristics & flags) != flags) continue;
-        const std::size_t rva = section->VirtualAddress, size = section->Misc.VirtualSize;
-        if (rva >= imageSize || size > imageSize - rva) {
-            Log("Rejected malformed PE section bounds."); return nullptr;
-        }
-        const auto found = FindFrameProfileTable({image.base + rva, size});
-        if (found.status == MatchStatus::ambiguous) {
-            Log("Frame profile signature was ambiguous inside a PE section.");
-            return nullptr;
-        }
-        if (found.status == MatchStatus::unique) {
-            match = image.base + rva + found.offset; count += found.count;
-        }
+        if ((section->Characteristics & characteristics) != characteristics) continue;
+        const auto begin = reinterpret_cast<std::uintptr_t>(image.base) +
+                           section->VirtualAddress;
+        const auto end = begin + section->Misc.VirtualSize;
+        if (target >= begin && target <= end && size <= end - target) return true;
     }
-    if (count == 1) return match;
-    std::ostringstream out; out << "Expected one frame profile table, found " << count << '.';
-    Log(out.str()); return nullptr;
+    return false;
+}
+
+std::uint8_t* DecodeRelative(std::uint8_t* instruction,
+                             std::size_t displacementOffset,
+                             std::size_t instructionSize) {
+    std::int32_t displacement{};
+    std::memcpy(&displacement, instruction + displacementOffset, sizeof(displacement));
+    return instruction + instructionSize + displacement;
 }
 
 bool PatchCode(std::uint8_t* address, std::span<const std::uint8_t> expected,
@@ -138,5 +132,19 @@ bool IsReachable(const void* end, const void* destination) {
 bool IsApplied(const PatchRecord& patch) {
     return patch.address && patch.size &&
            !std::memcmp(patch.address, patch.applied.data(), patch.size);
+}
+bool SetFrameProfiles(std::uint8_t* table, bool enable) {
+    const auto state = InspectGameplayProfiles(
+        {table, kFrameProfileSignature.size()}, float(kInternalTargetFps));
+    if ((enable && state != ProfileState::original) ||
+        (!enable && state != ProfileState::patched)) return false;
+    constexpr SIZE_T span = kGameplayFpsOffsets.back() + sizeof(float);
+    DWORD protection{};
+    if (!VirtualProtect(table, span, PAGE_READWRITE, &protection)) return false;
+    const float value = enable ? float(kInternalTargetFps) : 60.0F;
+    for (auto offset : kGameplayFpsOffsets)
+        std::memcpy(table + offset, &value, sizeof(value));
+    DWORD ignored{};
+    return VirtualProtect(table, span, protection, &ignored) != FALSE;
 }
 } // namespace nioh1fix::runtime

@@ -10,6 +10,7 @@ from pathlib import Path
 
 SUPPORTED_TIMESTAMP = 0x6307ABD5
 SUPPORTED_IMAGE_SIZE = 0x0306E000
+SUPPORTED_SHA256 = "56006af3fc0945248aa7a2e33fd95d4e510f1dbe3395eb3644dae3c2806377f6"
 PROFILE_SIGNATURE = bytes.fromhex(
     "000070420100000001000000"
     "0000f0410100000002000000"
@@ -43,13 +44,16 @@ def main() -> int:
     print(f"image size: 0x{image_size:08X}")
     print(f"frame profile matches: {matches}")
 
-    supported = (
+    validated = (
         timestamp == SUPPORTED_TIMESTAMP
         and image_size == SUPPORTED_IMAGE_SIZE
         and matches == 1
+        and digest == SUPPORTED_SHA256
     )
-    print(f"supported: {'yes' if supported else 'no'}")
-    return 0 if supported else 1
+    print(f"validated build metadata: {'yes' if validated else 'no'}")
+    if not validated:
+        print("runtime compatibility requires the complete in-memory signature scan")
+    return 0
 
 
 if __name__ == "__main__":

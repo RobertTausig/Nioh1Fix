@@ -10,8 +10,8 @@ Proton and includes the required ASI loader.
 ## Status
 
 - Current version: 1.6.1.
-- Supported executable: Steam Nioh v1.24.07, dated 2022-08-25.
-- Supported executable SHA-256:
+- Validated executable: Steam Nioh ProductVersion 1.24.8.0, dated 2022-08-25.
+- Validated executable SHA-256:
   `56006af3fc0945248aa7a2e33fd95d4e510f1dbe3395eb3644dae3c2806377f6`
 - Validated on Linux/Proton at 130 FPS and while changing external framerate
   caps during gameplay.
@@ -21,7 +21,12 @@ Proton and includes the required ASI loader.
   also normalized without changing their original 60 FPS behavior.
 - The original 30 FPS profiles remain capped and use their stock timing.
 
-Unsupported executable versions are rejected without modifying memory.
+Other x64 `nioh.exe` builds are not rejected by version number. Before its
+first write, Nioh1Fix must uniquely locate every required code path through
+relocation-aware signatures and validate the derived globals, call targets,
+input layout, and frame-profile table. A missing, changed, or ambiguous path
+leaves the executable untouched. This can accommodate a relinked build whose
+logic is unchanged, but it cannot infer a replacement for code that changed.
 
 ## Installation on Linux
 
@@ -72,7 +77,8 @@ Pure profile and timing calculations live in `core.hpp`; executable signatures
 are declarative data in `signatures.hpp`; shared runtime contracts are in
 `runtime.hpp`. Platform access, timing callbacks, generic hook construction,
 patch installation, monitoring, and process startup each have dedicated
-translation units.
+translation units. Resolved addresses exist only in the current process and
+are never written to configuration files.
 
 ## Build on Linux
 
@@ -116,8 +122,10 @@ python3 scripts/verify_executable.py \
   "/mnt/ssd/SteamLibrary/steamapps/common/Nioh/nioh.exe"
 ```
 
-This reports PE metadata, the SHA-256 digest, and compatible frame-profile
-table matches. It does not modify the executable.
+This reports PE metadata, the SHA-256 digest, frame-profile table matches, and
+whether it is the exactly validated build. Runtime signature compatibility can
+only be established after the game's protected code is available in memory.
+The check does not modify the executable.
 
 ## Disable or Uninstall
 

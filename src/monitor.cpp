@@ -5,25 +5,21 @@
 
 namespace nioh1fix::runtime {
 static bool CheckCorePatch(const PatchRecord& patch, const char* changed) {
-    if (!patch.address || IsApplied(patch)) return true;
+    if (IsApplied(patch)) return true;
     Log(changed); return false;
 }
-static bool MaintainCore(const PeImage& image, PatchSet& patches, DWORD elapsed) {
-    if (!patches.gameplay.address && !InstallGameplayHook(image, patches.gameplay))
-        return false;
+static bool MaintainCore(PatchSet& patches) {
     if (!CheckCorePatch(patches.gameplay,
             "The gameplay FPS accessor changed unexpectedly after patching.")) return false;
-    if (!patches.limiter.address && !InstallLimiter(image, patches.limiter)) return false;
     if (!CheckCorePatch(patches.limiter,
             "The main frame limiter changed unexpectedly.")) return false;
-    if (!patches.present.address && !InstallPresentHook(image, patches.present, elapsed))
-        return false;
     return CheckCorePatch(patches.present,
                           "Present dispatch changed unexpectedly after patching.");
 }
-static bool MaintainOptional(const PeImage& image, PatchSet& patches) {
+static bool MaintainOptional(const PeImage& image, const CompatibilityPlan& plan,
+                             PatchSet& patches) {
     if (patches.motionStatus == PatchStatus::pending)
-        patches.motionStatus = InstallMotionHooks(image, patches);
+        patches.motionStatus = InstallMotionHooks(image, plan, patches);
     if (patches.motionStatus == PatchStatus::installed)
         for (const auto& patch : patches.motion) if (!IsApplied(patch)) {
             Log("An animation timing call changed unexpectedly."); return false;
@@ -31,7 +27,8 @@ static bool MaintainOptional(const PeImage& image, PatchSet& patches) {
     for (std::size_t i = 0; i < kHooks.size(); ++i) {
         auto& state = patches.hooks[i];
         if (state.status == PatchStatus::pending)
-            state.status = InstallBlockHook(image, kHooks[i], state, patches.resources);
+            state.status = InstallBlockHook(image, kHooks[i], plan.hookBlocks[i],
+                                            state, patches.resources);
         else if (state.status == PatchStatus::installed && !IsApplied(state.patch)) {
             Log(std::string("The ") + kHooks[i].name +
                 " timing block changed unexpectedly.");
@@ -39,7 +36,7 @@ static bool MaintainOptional(const PeImage& image, PatchSet& patches) {
         }
     }
     if (patches.inputStatus == PatchStatus::pending)
-        patches.inputStatus = InstallInputHook(image, patches);
+        patches.inputStatus = InstallInputHook(image, plan, patches);
     if (patches.inputStatus == PatchStatus::installed && !IsApplied(patches.input)) {
         Log("The input cadence call changed unexpectedly."); return false;
     }
@@ -72,16 +69,29 @@ static void LogSummary(const PatchSet& patches, unsigned reapplyCount) {
     Log(out.str());
 }
 
-bool Monitor(const PeImage& image, std::uint8_t* table) {
-    const auto tableBytes = std::span<const std::uint8_t>(
-        table, kFrameProfileSignature.size());
-    PatchSet patches{}; unsigned reapplyCount{};
+bool Monitor(const PeImage& image) {
+    PatchSet patches{}; CompatibilityPlan plan{};
+    unsigned reapplyCount{}; bool coreInstalled{};
     for (DWORD elapsed = kMonitorIntervalMs; elapsed <= kMonitorDurationMs;
          elapsed += kMonitorIntervalMs) {
         Sleep(kMonitorIntervalMs);
-        if (!MaintainCore(image, patches, elapsed) ||
-            !MaintainOptional(image, patches)) return false;
-        if (elapsed % kDiagnosticsIntervalMs == 0) LogDiagnostics(table, elapsed);
+        if (!coreInstalled) {
+            const auto status = ResolveCompatibility(image, plan);
+            if (status == ResolveStatus::pending) continue;
+            if (status == ResolveStatus::incompatible) return false;
+            g.activeProfile = plan.activeProfile;
+            Log(plan.knownBuild ? "Recognized the validated Steam executable."
+                                : "Executable is untested but signature-compatible.");
+            if (!InstallCore(image, plan, patches, elapsed)) {
+                g.activeProfile = nullptr; Log("Core patch transaction failed.");
+                return false;
+            }
+            coreInstalled = true;
+        } else if (!MaintainCore(patches)) return false;
+        if (!MaintainOptional(image, plan, patches)) return false;
+        if (elapsed % kDiagnosticsIntervalMs == 0) LogDiagnostics(plan.table, elapsed);
+        const auto tableBytes = std::span<const std::uint8_t>(
+            plan.table, kFrameProfileSignature.size());
         const auto state = InspectGameplayProfiles(tableBytes, float(kInternalTargetFps));
         if (state == ProfileState::patched) continue;
         if (state == ProfileState::invalid) {
@@ -91,10 +101,14 @@ bool Monitor(const PeImage& image, std::uint8_t* table) {
         }
         std::ostringstream out; out << "Frame profile reset to 60 FPS after "
             << elapsed << " ms; reapplying the patch."; Log(out.str());
-        if (!ApplyFrameProfiles(table)) {
+        if (!SetFrameProfiles(plan.table, true)) {
             Log("Failed to reapply the framerate patch."); return false;
         }
         ++reapplyCount;
+    }
+    if (!coreInstalled) {
+        Log("No complete compatible patch plan was found; no changes were made.");
+        return false;
     }
     LogSummary(patches, reapplyCount);
     return patches.present.address && patches.limiter.address && patches.gameplay.address;

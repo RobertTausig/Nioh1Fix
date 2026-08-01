@@ -79,6 +79,22 @@ int main()
                     std::span<std::uint8_t>(image.data(), 8), 120.0F),
                 "short table was accepted");
 
+    constexpr std::array<std::uint8_t, 3> patternBytes{0xAA,0x00,0xCC};
+    constexpr std::array<std::uint8_t, 3> patternMask{0xFF,0x00,0xFF};
+    const nioh1fix::BytePattern pattern{patternBytes, patternMask};
+    const std::array<std::uint8_t, 5> maskedImage{0x00,0xAA,0x47,0xCC,0x00};
+    const auto masked = nioh1fix::FindPattern(maskedImage, pattern);
+    ok &= Check(masked.status == nioh1fix::MatchStatus::unique && masked.offset == 1,
+                "masked signature did not match its wildcard byte");
+    const std::array<std::uint8_t, 6> maskedDuplicate{0xAA,0x01,0xCC,
+                                                     0xAA,0x02,0xCC};
+    ok &= Check(nioh1fix::FindPattern(maskedDuplicate, pattern).status ==
+                    nioh1fix::MatchStatus::ambiguous,
+                "duplicate masked signatures did not fail closed");
+    const std::array<std::uint8_t, 3> fixedMismatch{0xAA,0x47,0xCD};
+    ok &= Check(!nioh1fix::MatchesPattern(fixedMismatch, pattern),
+                "masked signature ignored a fixed byte");
+
     if (ok) {
         std::cout << "All frame profile tests passed.\n";
         return 0;

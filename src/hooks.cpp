@@ -95,16 +95,9 @@ static bool AppendMultiply(std::array<std::uint8_t, 64>& bytes,
 }
 
 PatchStatus InstallBlockHook(const PeImage& image, const HookSpec& spec,
+                             std::uint8_t* block,
                              HookState& state, HookResources& resources) {
-    const auto found = FindCode(image, spec.signature);
-    if (found.count > 1) {
-        Log(std::string("The ") + spec.name +
-            " signature was ambiguous; normalization was not installed.");
-        return PatchStatus::unavailable;
-    }
-    if (!found.count) return PatchStatus::pending;
     if (!EnsureHookResources(image, resources)) return PatchStatus::unavailable;
-    auto* block = found.address + spec.blockOffset;
     auto* stub = resources.code + spec.stubOffset;
     std::array<std::uint8_t, 64> stubBytes{};
     std::size_t size = spec.blockSize;
