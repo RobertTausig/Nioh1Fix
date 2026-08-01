@@ -3,10 +3,11 @@
 ## Goal and Current State
 
 Nioh1Fix unlocks Nioh: Complete Edition on Linux/Proton and compensates
-Katana Engine gameplay timing dynamically. Version 1.5.0 has been validated at
+Katana Engine gameplay timing dynamically. Version 1.6.0 has been validated at
 130 FPS and while changing external framerate caps during gameplay. Player and
-ordinary enemy animation, grass and bush wind, normal and aiming camera
-sensitivity, menu navigation, and firearm input are validated.
+ordinary enemy animation, grass and bush wind, the Amrita Gauge pulse, water,
+cloud movement, normal and aiming camera sensitivity, menu navigation, and
+firearm input are validated.
 
 Do not replace the working implementation with an earlier experimental
 approach without new evidence.
@@ -84,10 +85,11 @@ This empirical factor of two is required. Returning measured FPS improved but
 did not fully correct speed. Returning 60 made animation much faster.
 
 Separate unique-signature hooks scale three motion-component paths, normal
-camera input, firearm/bow aiming input, and grass/bush wind animation by the
-measured presentation interval. A 60 Hz cadence gate clears only transient and
-repeat input masks on skipped samples; the original input update still runs
-every render frame.
+camera input, firearm/bow aiming input, grass/bush wind animation, the active
+SCL interface animator, statistical-ocean water, and three cloud systems by
+the measured presentation interval. A 60 Hz cadence gate clears only transient
+and repeat input masks on skipped samples; the original input update still
+runs every render frame.
 
 Normal aggressive enemies confirmed correct idle, locomotion, blocking, and
 attack animation timing. Passive tutorial enemies had been mistaken for a
@@ -107,6 +109,11 @@ without new evidence; previous experiments regressed firearm and menu input.
 - Normal camera scale block: `0x00853457`
 - Aiming camera scale block: `0x0085E429`
 - Grass and bush wind scale block: `0x0099105C`
+- SCL interface-animation scale block: `0x0053370A`
+- Statistical-ocean update: `0x003A3440`
+- Cloud-plane update: `0x003A9150`
+- Cloud-circle update: `0x003ABAB0`
+- Cloud-particle update: `0x003AF180`
 - Input cadence call: `0x00FABFA0`
 
 Runtime patching must continue using unique full signatures. Do not patch bare
@@ -127,6 +134,9 @@ RVAs without signature and PE verification.
   stack pointer, and caused a startup crash. The hook was later removed.
 - Returning a fixed 60 from `0x00E7D150`: compensation direction was wrong and
   animation became much faster.
+- Scaling the fixed one-layout-frame branch of `CAnimatorBase@scl@ktgl@@` at
+  RVA `0x0056D77C` did not affect the Amrita Gauge pulse. The active
+  seconds-based branch at RVA `0x0053370A` is the validated fix.
 
 See `docs/research.md` and Git history for the detailed sequence.
 

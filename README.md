@@ -9,15 +9,16 @@ Proton and includes the required ASI loader.
 
 ## Status
 
-- Current version: 1.5.0.
+- Current version: 1.6.0.
 - Supported executable: Steam Nioh v1.24.07, dated 2022-08-25.
 - Supported executable SHA-256:
   `56006af3fc0945248aa7a2e33fd95d4e510f1dbe3395eb3644dae3c2806377f6`
 - Validated on Linux/Proton at 130 FPS and while changing external framerate
   caps during gameplay.
-- Player and enemy motion, grass and bush wind animation, normal and aiming
-  camera sensitivity, menu navigation, and firearm input retain their original
-  wall-clock behavior above 60 FPS.
+- Player and enemy motion, grass and bush wind, the Amrita Gauge pulse, water,
+  and cloud animation retain their original wall-clock behavior above 60 FPS.
+- Normal and aiming camera sensitivity, menu navigation, and firearm input are
+  also normalized without changing their original 60 FPS behavior.
 - The original 30 FPS profiles remain capped and use their stock timing.
 
 Unsupported executable versions are rejected without modifying memory.
@@ -63,8 +64,9 @@ TargetFPS = 120
 The timing corrections measure presentation intervals with
 `QueryPerformanceCounter`. They therefore support arbitrary and changing
 framerates rather than assuming 120 or 130 FPS. Separate verified hooks
-normalize motion components, vegetation wind animation, normal and aiming
-camera input, and the transient/repeat input cadence used by menus.
+normalize motion components, vegetation wind, SCL interface animation,
+statistical-ocean water, three cloud systems, normal and aiming camera input,
+and the transient/repeat input cadence used by menus.
 
 ## Build on Linux
 
@@ -87,7 +89,7 @@ cmake --build build-windows
 scripts/package.sh build-windows dist
 ```
 
-The package script creates `dist/Nioh1Fix-1.5.0.zip`. It downloads Ultimate
+The package script creates `dist/Nioh1Fix-1.6.0.zip`. It downloads Ultimate
 ASI Loader v9.7.1, verifies its SHA-256 digest, and renames the x64 proxy to
 `version.dll`.
 

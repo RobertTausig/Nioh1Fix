@@ -2225,7 +2225,7 @@ DWORD WINAPI MainThread(void*)
     const auto pluginPath = GetModulePath(gThisModule);
     const auto pluginDirectory = pluginPath.parent_path();
     gLog.open(pluginDirectory / L"Nioh1Fix.log", std::ios::trunc);
-    Log("Nioh1Fix v1.5.0");
+    Log("Nioh1Fix v1.6.0");
     QueryPerformanceFrequency(&gPerformanceFrequency);
 
     const auto exeModule = GetModuleHandleW(nullptr);

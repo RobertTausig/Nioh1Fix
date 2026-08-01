@@ -80,6 +80,12 @@ for systems that consume per-render values directly:
 - Normal gameplay camera axes are scaled at RVA `0x00853457`.
 - Firearm and bow aiming-camera axes are scaled at RVA `0x0085E429`.
 - The grass and bush wind phase is scaled at RVA `0x0099105C`.
+- The active seconds-based SCL interface-animation branch is scaled at RVA
+  `0x0053370A`; this corrects the Amrita Gauge pulse.
+- The `CStatisticalOcean::Update` delta is scaled at RVA `0x003A3440`.
+- Cloud movement deltas are scaled in `CCloudPlane::Update` at RVA
+  `0x003A9150`, `CCloudCircle::Update` at RVA `0x003ABAB0`, and
+  `CCloudParticleObject::Update` at RVA `0x003AF180`.
 - Transient pressed, released, and repeat input state is exposed at the
   original 60 Hz cadence through the call at RVA `0x00FABFA0`.
 
@@ -120,6 +126,11 @@ Relevant RVAs for the supported build:
 - Present dispatch block: `0x002B220C`
 - Original Present sync-interval load: `0x002B2231`
 - Frame controller: `0x019301D0`
+- SCL interface-animation scale: `0x0053370A`
+- Statistical-ocean update: `0x003A3440`
+- Cloud-plane update: `0x003A9150`
+- Cloud-circle update: `0x003ABAB0`
+- Cloud-particle update: `0x003AF180`
 
 RVAs are documentation and diagnostics. Runtime writes use verified full
 signatures and supported PE metadata.
@@ -140,7 +151,8 @@ signatures and supported PE metadata.
   validated implementation.
 - Scaling the fixed one-layout-frame-per-render branch of
   `CAnimatorBase@scl@ktgl@@` at RVA `0x0056D77C` did not affect the Amrita
-  Gauge pulse. That experiment was removed before further pulse analysis.
+  Gauge pulse. That experiment was removed; the active seconds-based branch at
+  RVA `0x0053370A` was later identified and validated.
 
 ## Validation
 
@@ -148,8 +160,8 @@ Validated on Linux with Proton:
 
 - 130 FPS in menus and gameplay.
 - Runtime changes between external FPS caps.
-- Stable player, ordinary enemy, grass, and bush animation duration in
-  wall-clock seconds.
+- Stable player, ordinary enemy, grass, bush, Amrita Gauge pulse, water, and
+  cloud animation duration in wall-clock seconds.
 - Stable normal and firearm/bow aiming-camera sensitivity.
 - One menu step per D-pad press, normal hold-to-repeat behavior, and working
   firearm input.
