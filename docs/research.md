@@ -9,8 +9,9 @@
 - Packed executable SHA-256:
   `56006af3fc0945248aa7a2e33fd95d4e510f1dbe3395eb3644dae3c2806377f6`
 
-Analysis used a temporary unpacked copy. The installed executable was not
-modified.
+Analysis uses the persistent unpacked copy at
+`$HOME/.local/share/Nioh1Fix/analysis/nioh.exe.unpacked.exe`. The installed
+executable was not modified.
 
 ## Frame Profiles
 
@@ -137,6 +138,9 @@ signatures and supported PE metadata.
 - Experimental broad enemy-update hooks did not improve the tutorial
   observation and caused firearm or menu regressions. They are not part of the
   validated implementation.
+- Scaling the fixed one-layout-frame-per-render branch of
+  `CAnimatorBase@scl@ktgl@@` at RVA `0x0056D77C` did not affect the Amrita
+  Gauge pulse. That experiment was removed before further pulse analysis.
 
 ## Validation
 

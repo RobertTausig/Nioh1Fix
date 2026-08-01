@@ -26,16 +26,16 @@ approach without new evidence.
 ## Paths
 
 - Repository:
-  `/home/armin/Repos/Personal Repos/Nioh1Fix`
+  `$HOME/Repos/Personal Repos/Nioh1Fix`
 - Game:
   `/mnt/ssd/SteamLibrary/steamapps/common/Nioh`
 - Runtime log:
   `/mnt/ssd/SteamLibrary/steamapps/common/Nioh/Nioh1Fix.log`
-- Temporary analyzed executable:
-  `/tmp/nioh-unpack/nioh.exe.unpacked.exe`
+- Persistent analyzed executable:
+  `$HOME/.local/share/Nioh1Fix/analysis/nioh.exe.unpacked.exe`
 
-The temporary executable may not survive a reboot. Never modify the installed
-`nioh.exe`.
+Keep the persistent analysis copy available across reboots. Never modify the
+installed `nioh.exe`.
 
 ## Supported Executable
 
