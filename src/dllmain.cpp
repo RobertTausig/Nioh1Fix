@@ -7,7 +7,7 @@ namespace nioh1fix::runtime {
 DWORD WINAPI MainThread(void*) {
     const auto directory = ModulePath(g.module).parent_path();
     g.log.open(directory / L"Nioh1Fix.log", std::ios::trunc);
-    Log("Nioh1Fix v1.6.2");
+    Log("Nioh1Fix v" NIOH1FIX_VERSION);
     QueryPerformanceFrequency(&g.frequency);
 
     const auto module = GetModuleHandleW(nullptr);

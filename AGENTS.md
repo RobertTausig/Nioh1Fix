@@ -3,7 +3,7 @@
 ## Goal and Current State
 
 Nioh1Fix unlocks Nioh: Complete Edition on Linux/Proton and compensates
-Katana Engine gameplay timing dynamically. Version 1.6.2 retains the validated
+Katana Engine gameplay timing dynamically. Version 1.7.0 retains the validated
 1.6.0 timing implementation and no longer exposes the internal 120 FPS startup
 target as user configuration. The implementation has been validated at 130
 FPS and while changing external framerate caps during gameplay. Player and
@@ -162,6 +162,21 @@ cmake --build build -j2
 ctest --test-dir build --output-on-failure
 ```
 
+Run the GitHub Actions workflow locally with the distribution package for
+`act` and a local artifact server:
+
+```bash
+act_artifacts="$(mktemp -d)"
+act push \
+  -P ubuntu-latest=catthehacker/ubuntu:act-latest \
+  --artifact-server-path "${act_artifacts}"
+```
+
+Normal pushes and pull requests build the native Linux tests, run them, and
+cross-build and package the Windows plugin. A pushed `vX.Y.Z` tag must exactly
+match the version in `CMakeLists.txt`; after both build jobs pass, the workflow
+creates or updates the corresponding GitHub Release with the tested ZIP.
+
 Windows cross-build:
 
 ```bash
@@ -185,8 +200,9 @@ Package:
 scripts/package.sh build-windows dist
 ```
 
-The version in `CMakeLists.txt`, `scripts/package.sh`, and the startup log in
-`src/dllmain.cpp` must remain synchronized.
+`CMakeLists.txt` is the release-version source of truth. The build passes that
+version to the DLL startup log, and both package scripts derive archive names
+from it.
 
 Install only while the game is stopped:
 

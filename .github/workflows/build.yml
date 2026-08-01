@@ -1,29 +1,76 @@
-name: build
+name: Build and release
 
 on:
   push:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  native-tests:
+  linux-build-and-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-      - run: cmake --build build --parallel
-      - run: ctest --test-dir build --output-on-failure
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes cmake g++
+      - name: Configure Linux build
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build Linux test executables
+        run: cmake --build build --parallel
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
 
-  windows-package:
-    runs-on: windows-latest
+  windows-build-and-package:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: cmake -S . -B build -A x64
-      - run: cmake --build build --config Release --parallel
-      - run: ctest --test-dir build -C Release --output-on-failure
-      - shell: pwsh
-        run: ./scripts/package.ps1
-      - uses: actions/upload-artifact@v4
+      - name: Install packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes cmake curl xz-utils unzip zip
+      - name: Cross-build Windows plugin and create package
+        run: scripts/build-linux.sh
+      - name: Upload Windows release package
+        uses: actions/upload-artifact@v4
         with:
           name: Nioh1Fix
           path: dist/Nioh1Fix-*.zip
+          if-no-files-found: error
+
+  github-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - linux-build-and-tests
+      - windows-build-and-package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download tested package
+        uses: actions/download-artifact@v4
+        with:
+          name: Nioh1Fix
+          path: dist
+      - name: Validate release tag and package
+        shell: bash
+        run: |
+          version="$(sed -nE 's/^project\(Nioh1Fix VERSION ([0-9.]+) LANGUAGES CXX\)$/\1/p' CMakeLists.txt)"
+          test -n "${version}"
+          test "${GITHUB_REF_NAME}" = "v${version}"
+          test -f "dist/Nioh1Fix-${version}.zip"
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" dist/Nioh1Fix-*.zip --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" dist/Nioh1Fix-*.zip \
+              --verify-tag --generate-notes --title "Nioh1Fix ${GITHUB_REF_NAME}"
+          fi

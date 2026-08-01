@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(Nioh1Fix VERSION 1.6.2 LANGUAGES CXX)
+project(Nioh1Fix VERSION 1.7.0 LANGUAGES CXX)
 
 include(CTest)
 
@@ -43,6 +43,7 @@ if(WIN32)
         UNICODE
         _UNICODE
         WIN32_LEAN_AND_MEAN
+        NIOH1FIX_VERSION="${PROJECT_VERSION}"
     )
     set_target_properties(Nioh1Fix PROPERTIES
         PREFIX ""
