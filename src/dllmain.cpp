@@ -22,9 +22,7 @@ namespace
 constexpr wchar_t kSupportedExe[] = L"nioh.exe";
 constexpr DWORD kSupportedTimestamp = 0x6307ABD5;
 constexpr DWORD kSupportedImageSize = 0x0306E000;
-constexpr int kDefaultTargetFps = 120;
-constexpr int kMinTargetFps = 60;
-constexpr int kMaxTargetFps = 360;
+constexpr int kInternalTargetFps = 120;
 constexpr DWORD kMonitorIntervalMs = 250;
 constexpr DWORD kMonitorDurationMs = 30'000;
 constexpr DWORD kDiagnosticsIntervalMs = 2'000;
@@ -193,7 +191,6 @@ volatile LONG64 gPresentTotalTicks{};
 volatile LONG64 gPreviousPresentTick{};
 volatile LONG64 gLastPresentIntervalTicks{};
 LARGE_INTEGER gPerformanceFrequency{};
-int gConfiguredTargetFps{kDefaultTargetFps};
 nioh1fix::TimingScaleState gTimingScaleState{};
 volatile LONG gTimingScaleBits{0x3F800000};
 volatile LONG* gCameraScaleBits{};
@@ -540,7 +537,7 @@ HRESULT AggressivePresent(void* renderer, const std::uint8_t* presentConfig)
             PublishTimingScale(nioh1fix::UpdateTimingScale(
                 gTimingScaleState,
                 intervalSeconds,
-                static_cast<double>(gConfiguredTargetFps)));
+                static_cast<double>(kInternalTargetFps)));
         }
     }
     const HRESULT result = present(swapChain, 0, flags);
@@ -568,7 +565,7 @@ float GetGameplayReferenceFps()
     const LONG64 intervalTicks = InterlockedCompareExchange64(
         &gLastPresentIntervalTicks, 0, 0);
     if (intervalTicks <= 0 || gPerformanceFrequency.QuadPart <= 0) {
-        return static_cast<float>(gConfiguredTargetFps * 2);
+        return static_cast<float>(kInternalTargetFps * 2);
     }
 
     const double measuredFps =
@@ -1767,7 +1764,7 @@ PresentPatch PatchPresentDispatch(std::uint8_t* address)
     return result;
 }
 
-bool ApplyFrameratePatch(std::uint8_t* table, int targetFps)
+bool ApplyFrameratePatch(std::uint8_t* table, int internalTargetFps)
 {
     DWORD oldProtection{};
     constexpr SIZE_T patchSpan =
@@ -1779,7 +1776,7 @@ bool ApplyFrameratePatch(std::uint8_t* table, int targetFps)
 
     const bool patched = nioh1fix::PatchGameplayProfiles(
         std::span<std::uint8_t>(table, nioh1fix::kFrameProfileSignature.size()),
-        static_cast<float>(targetFps));
+        static_cast<float>(internalTargetFps));
 
     DWORD ignored{};
     const bool protectionRestored =
@@ -1797,7 +1794,7 @@ bool ApplyFrameratePatch(std::uint8_t* table, int targetFps)
 
 bool MonitorRuntimePatches(const PeImage& image,
                            std::uint8_t* table,
-                           int targetFps)
+                           int internalTargetFps)
 {
     const auto bytes = std::span<const std::uint8_t>(
         table, nioh1fix::kFrameProfileSignature.size());
@@ -2142,7 +2139,8 @@ bool MonitorRuntimePatches(const PeImage& image,
         }
 
         const auto state =
-            nioh1fix::InspectGameplayProfiles(bytes, static_cast<float>(targetFps));
+            nioh1fix::InspectGameplayProfiles(
+                bytes, static_cast<float>(internalTargetFps));
         if (state == nioh1fix::ProfileState::patched) {
             continue;
         }
@@ -2158,7 +2156,7 @@ bool MonitorRuntimePatches(const PeImage& image,
         reset << "Frame profile reset to 60 FPS after " << elapsed
               << " ms; reapplying the patch.";
         Log(reset.str());
-        if (!ApplyFrameratePatch(table, targetFps)) {
+        if (!ApplyFrameratePatch(table, internalTargetFps)) {
             Log("Failed to reapply the framerate patch.");
             return false;
         }
@@ -2225,7 +2223,7 @@ DWORD WINAPI MainThread(void*)
     const auto pluginPath = GetModulePath(gThisModule);
     const auto pluginDirectory = pluginPath.parent_path();
     gLog.open(pluginDirectory / L"Nioh1Fix.log", std::ios::trunc);
-    Log("Nioh1Fix v1.6.0");
+    Log("Nioh1Fix v1.6.1");
     QueryPerformanceFrequency(&gPerformanceFrequency);
 
     const auto exeModule = GetModuleHandleW(nullptr);
@@ -2258,15 +2256,8 @@ DWORD WINAPI MainThread(void*)
     const auto iniPath = pluginDirectory / L"Nioh1Fix.ini";
     const bool enabled =
         ReadIniBool(iniPath, L"Framerate", L"Enabled", true);
-    const int targetFps = GetPrivateProfileIntW(
-        L"Framerate", L"TargetFPS", kDefaultTargetFps, iniPath.c_str());
-    gConfiguredTargetFps = targetFps;
     if (!enabled) {
         Log("Framerate patch is disabled in Nioh1Fix.ini.");
-        return 0;
-    }
-    if (targetFps < kMinTargetFps || targetFps > kMaxTargetFps) {
-        Log("TargetFPS must be between 60 and 360. No changes were made.");
         return 0;
     }
 
@@ -2282,16 +2273,17 @@ DWORD WINAPI MainThread(void*)
                  << static_cast<std::size_t>(table - image.base);
         Log(location.str());
     }
-    if (!ApplyFrameratePatch(table, targetFps)) {
+    if (!ApplyFrameratePatch(table, kInternalTargetFps)) {
         Log("Failed to apply the framerate patch.");
         return 0;
     }
 
     std::ostringstream success;
-    success << "Patched both 60 FPS gameplay profiles to " << targetFps
+    success << "Patched both 60 FPS gameplay profiles to "
+            << kInternalTargetFps
             << " FPS; 30 FPS profiles were left unchanged.";
     Log(success.str());
-    MonitorRuntimePatches(image, table, targetFps);
+    MonitorRuntimePatches(image, table, kInternalTargetFps);
     return 0;
 }
 } // namespace

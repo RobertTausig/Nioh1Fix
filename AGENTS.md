@@ -3,8 +3,10 @@
 ## Goal and Current State
 
 Nioh1Fix unlocks Nioh: Complete Edition on Linux/Proton and compensates
-Katana Engine gameplay timing dynamically. Version 1.6.0 has been validated at
-130 FPS and while changing external framerate caps during gameplay. Player and
+Katana Engine gameplay timing dynamically. Version 1.6.1 retains the validated
+1.6.0 timing implementation and no longer exposes the internal 120 FPS startup
+target as user configuration. The implementation has been validated at 130
+FPS and while changing external framerate caps during gameplay. Player and
 ordinary enemy animation, grass and bush wind, the Amrita Gauge pulse, water,
 cloud movement, normal and aiming camera sensitivity, menu navigation, and
 firearm input are validated.
@@ -60,7 +62,8 @@ The frame-profile table at RVA `0x017AA8D8` contains:
 60, 1, 2
 ```
 
-Rows 0 and 3 are changed to `TargetFPS`, default 120. Rows 1 and 2 stay at 30.
+Rows 0 and 3 are changed to the fixed internal target of 120. Rows 1 and 2 stay
+at 30. Actual presentation timing remains dynamically measured.
 
 The working unlock has three parts:
 
@@ -79,7 +82,7 @@ animation speed inversely. For gameplay profiles it must return:
 The Present helper records consecutive `QueryPerformanceCounter` timestamps.
 `GetGameplayReferenceFps()` reads the most recent interval and returns twice
 the resulting FPS, clamped to 30 through 2000. Before the first interval, it
-returns `2 * TargetFPS`. Profiles 1 and 2 return the stock 30.
+returns `2 * 120`. Profiles 1 and 2 return the stock 30.
 
 This empirical factor of two is required. Returning measured FPS improved but
 did not fully correct speed. Returning 60 made animation much faster.
@@ -190,7 +193,7 @@ speed, then inspect `Nioh1Fix.log`.
 - `src/dllmain.cpp`: runtime validation, hooks, diagnostics, and patch monitor.
 - `src/frame_profile.hpp`: pure frame-profile inspection and patching.
 - `tests/frame_profile_tests.cpp`: native tests for profile behavior.
-- `Nioh1Fix.ini`: runtime enable switch and internal target.
+- `Nioh1Fix.ini`: runtime enable switch.
 - `docs/research.md`: reverse-engineering record.
 - `scripts/package.sh`: Linux packaging and pinned ASI loader.
 - `scripts/package.ps1`: Windows packaging.

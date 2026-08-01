@@ -9,7 +9,7 @@ Proton and includes the required ASI loader.
 
 ## Status
 
-- Current version: 1.6.0.
+- Current version: 1.6.1.
 - Supported executable: Steam Nioh v1.24.07, dated 2022-08-25.
 - Supported executable SHA-256:
   `56006af3fc0945248aa7a2e33fd95d4e510f1dbe3395eb3644dae3c2806377f6`
@@ -51,15 +51,12 @@ The development installation used for testing is:
 ```ini
 [Framerate]
 Enabled = true
-TargetFPS = 120
 ```
 
 - `Enabled = false` prevents all Nioh1Fix memory patches.
-- `TargetFPS` accepts values from 60 through 360.
-- `TargetFPS` configures Nioh's internal gameplay profile and initial timing
-  fallback. It is not the final external FPS cap.
-- Leave `TargetFPS = 120` unless testing engine behavior. Control the actual
-  framerate with an external limiter or by leaving it uncapped.
+- Control the actual framerate with an external limiter or leave it uncapped.
+- The validated 120 FPS engine profile used during startup is an internal
+  implementation detail and does not limit the measured presentation rate.
 
 The timing corrections measure presentation intervals with
 `QueryPerformanceCounter`. They therefore support arbitrary and changing
@@ -89,7 +86,7 @@ cmake --build build-windows
 scripts/package.sh build-windows dist
 ```
 
-The package script creates `dist/Nioh1Fix-1.6.0.zip`. It downloads Ultimate
+The package script creates `dist/Nioh1Fix-1.6.1.zip`. It downloads Ultimate
 ASI Loader v9.7.1, verifies its SHA-256 digest, and renames the x64 proxy to
 `version.dll`.
 
@@ -120,7 +117,6 @@ To disable all patches without removing files:
 ```ini
 [Framerate]
 Enabled = false
-TargetFPS = 120
 ```
 
 Restart the game after changing the setting.

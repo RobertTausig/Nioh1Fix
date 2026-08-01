@@ -24,8 +24,9 @@ Katana Engine uses a four-row frame-profile table:
 | 2 | 30.0 | 1, 2 |
 | 3 | 60.0 | 1, 2 |
 
-Nioh1Fix changes rows 0 and 3 to `TargetFPS`, normally 120. Rows 1 and 2
-remain at 30.
+Nioh1Fix changes rows 0 and 3 to its fixed internal target of 120. Rows 1 and
+2 remain at 30. This target is not exposed as user configuration because the
+actual presentation rate is measured dynamically.
 
 The table alone does not unlock presentation. The two gameplay rows stayed
 patched to 120 during testing while the game continued presenting at 60 FPS.
@@ -34,7 +35,7 @@ patched to 120 during testing while the game continued presenting at 60 FPS.
 
 Three independent changes are required:
 
-1. Patch the two 60 FPS gameplay profiles to the configured internal target.
+1. Patch the two 60 FPS gameplay profiles to the internal 120 FPS target.
 2. Disable the QPC-based limiter called immediately after each `Present`.
 3. Replace the game's Present dispatch with `SyncInterval = 0` and
    `DXGI_PRESENT_DO_NOT_WAIT`.
@@ -66,7 +67,7 @@ timing_divisor = 2 * measured_presentation_fps
 Presentation intervals are measured once per frame with
 `QueryPerformanceCounter`. The accessor uses the immediately preceding frame
 interval and clamps the result to 30 through 2000. Before the first measured
-interval, it returns `2 * TargetFPS`.
+interval, it returns `2 * 120` as a startup fallback.
 
 The two 30 FPS profiles bypass dynamic compensation and return 30.
 
@@ -113,7 +114,7 @@ at 250 ms intervals, locates full byte signatures in executable sections, and
 requires unique matches before patching.
 
 The frame-profile table is also monitored. If it returns to the exact original
-state, the configured target is reapplied. Any unexpected table state stops
+state, the internal 120 FPS target is reapplied. Any unexpected table state stops
 monitoring without another write.
 
 Relevant RVAs for the supported build:
