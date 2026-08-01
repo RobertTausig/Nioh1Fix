@@ -73,19 +73,21 @@ PatchStatus InstallTextScrollHook(const PeImage& image,
     const CompatibilityPlan& plan, PatchSet& patches) {
     if (!EnsureHookResources(image, patches.resources))
         return PatchStatus::unavailable;
-    constexpr std::size_t copied = 8;
     auto* trampoline = patches.resources.code + 576;
-    std::array<std::uint8_t, copied + 12> bytes{};
-    std::memcpy(bytes.data(), plan.textScroll, copied);
-    bytes[copied] = 0x48; bytes[copied + 1] = 0xB8;
+    std::array<std::uint8_t, kTextScrollOverwriteSize + 12> bytes{};
+    std::memcpy(bytes.data(), plan.textScroll, kTextScrollOverwriteSize);
+    bytes[kTextScrollOverwriteSize] = 0x48;
+    bytes[kTextScrollOverwriteSize + 1] = 0xB8;
     const auto continuation = reinterpret_cast<std::uintptr_t>(
-        plan.textScroll + copied);
-    std::memcpy(bytes.data() + copied + 2, &continuation, 8);
-    bytes[copied + 10] = 0xFF; bytes[copied + 11] = 0xE0;
+        plan.textScroll + kTextScrollOverwriteSize);
+    std::memcpy(bytes.data() + kTextScrollOverwriteSize + 2, &continuation, 8);
+    bytes[kTextScrollOverwriteSize + 10] = 0xFF;
+    bytes[kTextScrollOverwriteSize + 11] = 0xE0;
     if (!WriteExecutable(trampoline, bytes) ||
         !IsReachable(plan.textScroll + 5, patches.resources.code + 32))
         return PatchStatus::unavailable;
-    std::array<std::uint8_t, copied> jump{0xE9,0,0,0,0,0x90,0x90,0x90};
+    std::array<std::uint8_t, kTextScrollOverwriteSize> jump{
+        0xE9, 0, 0, 0, 0, 0x90, 0x90, 0x90};
     const auto relative = std::int32_t(reinterpret_cast<std::intptr_t>(
         patches.resources.code + 32) - reinterpret_cast<std::intptr_t>(
         plan.textScroll + 5));

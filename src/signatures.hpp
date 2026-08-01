@@ -61,6 +61,7 @@ inline constexpr auto kTextScroll = Pattern(
     "6685C0740E66FFC86689413433C04883C428C38B49504533C0B20185C97411"
     "83E901742183E901743183F9017441EB4DF3410F104144410F2F413C724041"
     "C74150");
+inline constexpr std::size_t kTextScrollOverwriteSize = 8;
 inline constexpr auto kOcean = Pattern(
     "48895C24104889742418574883EC408B812401000033D28B9958010000FFC0F7"
     "B1200100008B8154010000488BF1448BC283C003488B913804000083C3034489"
@@ -87,64 +88,4 @@ inline constexpr std::array<HookSpec, 8> kHooks{{
     {kCloudCircle,0,7,448,6,{1,0},1,"cloud-circle","Scaled the verified cloud-circle animation update by the presentation interval."},
     {kCloudParticle,0,5,512,7,{1,0},1,"cloud-particle","Scaled the verified cloud-particle animation update by the presentation interval."}
 }};
-inline ResolveStatus ResolveCompatibility(const PeImage& image, CompatibilityPlan& plan) {
-    std::array<SearchResult, 16> found{FindCode(image,kGameplay),
-        FindCode(image,kLimiter), FindCode(image,kPresent),
-        FindCode(image,kMotionSlots), FindCode(image,kLinkedMotion),
-        FindCode(image,kMotionComponent), FindCode(image,kInput)};
-    for (std::size_t i = 0; i < kHooks.size(); ++i)
-        found[7 + i] = FindCode(image, kHooks[i].signature);
-    found[15] = FindCode(image, kTextScroll);
-    for (const auto& match : found) if (match.count > 1) {
-        Log("A required signature was ambiguous; no changes were made.");
-        return ResolveStatus::incompatible;
-    }
-    for (const auto& match : found) if (!match.count) return ResolveStatus::pending;
-    auto* active = DecodeRelative(found[0].address, 3, 7);
-    auto* table = DecodeRelative(found[0].address + 11, 3, 7);
-    const DWORD dataFlags = IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ;
-    if (!IsImageRange(image, active, sizeof(LONG), dataFlags) ||
-        !IsImageRange(image, table, kFrameProfileSignature.size(), dataFlags) ||
-        *reinterpret_cast<volatile LONG*>(active) < 0 ||
-        *reinterpret_cast<volatile LONG*>(active) >= 4 ||
-        InspectGameplayProfiles({table, kFrameProfileSignature.size()},
-                                float(kInternalTargetFps)) != ProfileState::original) {
-        Log("Derived gameplay globals did not validate; no changes were made.");
-        return ResolveStatus::incompatible;
-    }
-    constexpr std::array<std::size_t, 3> motionOffsets{21,32,14};
-    std::array<std::uint8_t*, 3> motionTargets{};
-    for (std::size_t i = 0; i < motionOffsets.size(); ++i) {
-        plan.motionCalls[i] = found[3 + i].address + motionOffsets[i];
-        motionTargets[i] = DecodeRelative(plan.motionCalls[i], 1, 5);
-    }
-    if (motionTargets[0] != motionTargets[1] ||
-        motionTargets[0] != motionTargets[2] ||
-        !IsImageRange(image, motionTargets[0], 1, IMAGE_SCN_MEM_EXECUTE)) {
-        Log("Animation-delta call targets did not validate; no changes were made.");
-        return ResolveStatus::incompatible;
-    }
-    plan.inputCall = found[6].address + 16;
-    auto* inputTarget = DecodeRelative(plan.inputCall, 1, 5);
-    if (!ValidateInputTarget(image, inputTarget)) {
-        Log("The input-update layout did not validate; no changes were made.");
-        return ResolveStatus::incompatible;
-    }
-    for (std::size_t i = 0; i < kHooks.size(); ++i) {
-        plan.hookBlocks[i] = found[7 + i].address + kHooks[i].blockOffset;
-        if (!IsImageRange(image, plan.hookBlocks[i], kHooks[i].blockSize,
-                          IMAGE_SCN_MEM_EXECUTE)) {
-            Log("A timing-hook block was outside executable code; no changes were made.");
-            return ResolveStatus::incompatible;
-        }
-    }
-    plan.gameplay = found[0].address; plan.limiter = found[1].address;
-    plan.present = found[2].address; plan.table = table;
-    plan.textScroll = found[15].address;
-    plan.activeProfile = reinterpret_cast<volatile LONG*>(active);
-    plan.inputTarget = reinterpret_cast<InputUpdateFunction>(inputTarget);
-    plan.knownBuild = image.headers->FileHeader.TimeDateStamp == kSupportedTimestamp &&
-        image.headers->OptionalHeader.SizeOfImage == kSupportedImageSize;
-    return ResolveStatus::compatible;
-}
 } // namespace nioh1fix::runtime

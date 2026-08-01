@@ -120,12 +120,17 @@ without new evidence; previous experiments regressed firearm and menu input.
 - Cloud-plane update: `0x003A9150`
 - Cloud-circle update: `0x003ABAB0`
 - Cloud-particle update: `0x003AF180`
+- Overflow-text scroll update: `0x0056C1B0`
 - Input cadence call: `0x00FABFA0`
 
-Runtime patching must continue using unique relocation-aware full signatures.
-Only audited address displacements may be wildcarded. Do not patch bare RVAs,
-and do not weaken the complete-plan validation performed before the first
-write.
+These RVAs are documentation and diagnostic references only. Every current
+and future runtime address used for a read, write, call, or hook must be found
+through a unique relocation-aware full signature. An address derived from a
+signature match is allowed only when its displacement and target layout are
+also validated. Only audited address displacements may be wildcarded. Never
+use a bare RVA as a runtime patch input or compatibility fallback. Add every
+new signature and derived target to the complete fail-closed compatibility
+plan that validates all locations before the first write.
 
 ## Failed Experiments
 
@@ -197,8 +202,8 @@ speed, then inspect `Nioh1Fix.log`.
 
 - `src/core.hpp`: pure frame-profile and timing-scale logic.
 - `src/runtime.hpp`: shared runtime contracts, state, and constants.
-- `src/signatures.hpp`: relocation-aware signatures, hook specs, and complete
-  compatibility-plan resolution.
+- `src/signatures.hpp`: relocation-aware signatures and hook specifications.
+- `src/compatibility.cpp`: complete fail-closed compatibility-plan resolution.
 - `src/platform.cpp`: logging, INI access, PE inspection, search, and writes.
 - `src/timing.cpp`: presentation measurement, callbacks, input, and diagnostics.
 - `src/hooks.cpp`: shared near-memory allocation and block-trampoline builder.

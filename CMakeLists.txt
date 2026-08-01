@@ -29,6 +29,7 @@ target_compile_features(nioh1fix_core INTERFACE cxx_std_20)
 
 if(WIN32)
     add_library(Nioh1Fix SHARED
+        src/compatibility.cpp
         src/dllmain.cpp
         src/hooks.cpp
         src/monitor.cpp
