@@ -3,13 +3,13 @@
 ## Goal and Current State
 
 Nioh1Fix unlocks Nioh: Complete Edition on Linux/Proton and compensates
-Katana Engine gameplay timing dynamically. Version 1.6.1 retains the validated
+Katana Engine gameplay timing dynamically. Version 1.6.2 retains the validated
 1.6.0 timing implementation and no longer exposes the internal 120 FPS startup
 target as user configuration. The implementation has been validated at 130
 FPS and while changing external framerate caps during gameplay. Player and
 ordinary enemy animation, grass and bush wind, the Amrita Gauge pulse, water,
 cloud movement, normal and aiming camera sensitivity, menu navigation, and
-firearm input are validated.
+firearm input are validated. Horizontal overflow-text scrolling is normalized.
 
 Do not replace the working implementation with an earlier experimental
 approach without new evidence.
@@ -212,6 +212,10 @@ speed, then inspect `Nioh1Fix.log`.
 - `scripts/package.sh`: Linux packaging and pinned ASI loader.
 - `scripts/package.ps1`: Windows packaging.
 
-Keep the files under `src/` at or below 150 lines each. The native tests cover
-portable profile, masked-signature, and timing math. Hook correctness still
-requires runtime validation on the validated executable.
+Treat 150 lines as a decomposition threshold, not a reason to compress code.
+If a clear, normally formatted extension would take a file beyond that size,
+split the file by responsibility and add another focused source or header.
+Do not combine statements, remove useful whitespace, shorten names, or weaken
+the structure merely to satisfy the limit. The native tests cover portable
+profile, masked-signature, and timing math. Hook correctness still requires
+runtime validation on the validated executable.

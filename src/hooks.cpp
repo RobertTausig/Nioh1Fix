@@ -51,11 +51,14 @@ bool EnsureHookResources(const PeImage& image, HookResources& resources) {
     resources = {code, data};
     const auto motion = AbsoluteJump(reinterpret_cast<const void*>(&GetNormalizedMotionDelta));
     const auto input = AbsoluteJump(reinterpret_cast<const void*>(&NormalizedInputUpdate));
+    const auto textScroll = AbsoluteJump(
+        reinterpret_cast<const void*>(&NormalizedTextScrollUpdate));
     std::memcpy(code, motion.data(), motion.size());
     std::memcpy(code + 16, input.data(), input.size());
+    std::memcpy(code + 32, textScroll.data(), textScroll.size());
     auto* values = reinterpret_cast<LONG*>(data);
     values[0] = std::bit_cast<LONG>(ReadTimingScale());
-    for (std::size_t i = 1; i < 8; ++i) values[i] = 0;
+    for (std::size_t i = 1; i < 9; ++i) values[i] = 0;
     DWORD ignored{};
     if (!VirtualProtect(code, 4096, PAGE_EXECUTE_READ, &ignored)) {
         VirtualFree(code, 0, MEM_RELEASE); VirtualFree(data, 0, MEM_RELEASE);

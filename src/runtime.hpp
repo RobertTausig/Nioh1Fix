@@ -16,7 +16,7 @@ inline constexpr DWORD kSupportedTimestamp = 0x6307ABD5;
 inline constexpr DWORD kSupportedImageSize = 0x0306E000;
 inline constexpr int kInternalTargetFps = 120;
 inline constexpr DWORD kMonitorIntervalMs = 250;
-inline constexpr DWORD kMonitorDurationMs = 30'000;
+inline constexpr DWORD kMonitorDurationMs = 120'000;
 inline constexpr DWORD kDiagnosticsIntervalMs = 2'000;
 
 struct PeImage { std::uint8_t* base{}; IMAGE_NT_HEADERS64* headers{}; };
@@ -40,8 +40,10 @@ struct HookSpec {
 struct HookState { PatchStatus status{}; PatchRecord patch{}; };
 struct HookResources { std::uint8_t* code{}; std::uint8_t* data{}; };
 using InputUpdateFunction = void (*)(void*);
+using TextScrollUpdateFunction = bool (*)(void*);
 struct CompatibilityPlan {
-    std::uint8_t* gameplay{}, *limiter{}, *present{}, *table{}, *inputCall{};
+    std::uint8_t* gameplay{}, *limiter{}, *present{}, *table{}, *inputCall{},
+        *textScroll{};
     InputUpdateFunction inputTarget{};
     std::array<std::uint8_t*, 3> motionCalls{};
     std::array<std::uint8_t*, 8> hookBlocks{};
@@ -49,9 +51,9 @@ struct CompatibilityPlan {
     bool knownBuild{};
 };
 struct PatchSet {
-    PatchRecord gameplay{}, limiter{}, present{}, input{};
+    PatchRecord gameplay{}, limiter{}, present{}, input{}, textScroll{};
     std::array<PatchRecord, 3> motion{};
-    PatchStatus motionStatus{}, inputStatus{};
+    PatchStatus motionStatus{}, inputStatus{}, textScrollStatus{};
     std::array<HookState, 8> hooks{};
     HookResources resources{};
 };
@@ -69,6 +71,7 @@ struct State {
     LONG64 previousInputTick{};
     double inputAccumulator{};
     InputUpdateFunction originalInputUpdate{};
+    TextScrollUpdateFunction originalTextScrollUpdate{};
 };
 extern State g;
 
@@ -95,6 +98,7 @@ LONG Counter(std::size_t index);
 bool IsThirtyFpsProfile();
 float GetNormalizedMotionDelta();
 void NormalizedInputUpdate(void* manager);
+bool NormalizedTextScrollUpdate(void* controller);
 HRESULT AggressivePresent(void* renderer, const std::uint8_t* config);
 float GetGameplayReferenceFps();
 void LogDiagnostics(std::uint8_t* table, DWORD elapsed);
@@ -107,6 +111,8 @@ PatchStatus InstallMotionHooks(const PeImage& image,
                                const CompatibilityPlan& plan, PatchSet& patches);
 PatchStatus InstallInputHook(const PeImage& image,
                              const CompatibilityPlan& plan, PatchSet& patches);
+PatchStatus InstallTextScrollHook(const PeImage& image,
+    const CompatibilityPlan& plan, PatchSet& patches);
 bool ValidateInputTarget(const PeImage& image, std::uint8_t* target);
 ResolveStatus ResolveCompatibility(const PeImage& image, CompatibilityPlan& plan);
 bool InstallCore(const PeImage& image, const CompatibilityPlan& plan,

@@ -87,6 +87,9 @@ for systems that consume per-render values directly:
 - Cloud movement deltas are scaled in `CCloudPlane::Update` at RVA
   `0x003A9150`, `CCloudCircle::Update` at RVA `0x003ABAB0`, and
   `CCloudParticleObject::Update` at RVA `0x003AF180`.
+- The overflow-text controller at RVA `0x0056C1B0` scales its fixed per-render
+  displacement by the presentation interval, preserving horizontal scroll
+  speed for long menu text.
 - Transient pressed, released, and repeat input state is exposed at the
   original 60 Hz cadence through the call at RVA `0x00FABFA0`.
 
@@ -110,7 +113,7 @@ is installed.
 
 ## Runtime Patching
 
-SteamStub decrypts code after the ASI starts. Nioh1Fix monitors for 30 seconds
+SteamStub decrypts code after the ASI starts. Nioh1Fix monitors for 120 seconds
 at 250 ms intervals. Before the first write, it must uniquely locate every
 required code path in executable sections. It then derives and validates the
 frame-profile table, active-profile index, shared motion target, input-update
@@ -141,6 +144,7 @@ Relevant RVAs for the supported build:
 - Cloud-plane update: `0x003A9150`
 - Cloud-circle update: `0x003ABAB0`
 - Cloud-particle update: `0x003AF180`
+- Overflow-text controller update: `0x0056C1B0`
 
 RVAs and PE metadata are documentation and diagnostics. Runtime writes use the
 fully validated compatibility plan derived from relocation-aware signatures.
@@ -163,6 +167,9 @@ fully validated compatibility plan derived from relocation-aware signatures.
   `CAnimatorBase@scl@ktgl@@` at RVA `0x0056D77C` did not affect the Amrita
   Gauge pulse. That experiment was removed; the active seconds-based branch at
   RVA `0x0053370A` was later identified and validated.
+- Scaling the inactive fixed-step SCL loop at RVA `0x005334F9` did not affect
+  overflow text; runtime diagnostics showed that loop was not entered. The
+  dedicated text-scroll controller was identified and used instead.
 
 ## Validation
 
@@ -175,6 +182,8 @@ Validated on Linux with Proton:
 - Stable normal and firearm/bow aiming-camera sensitivity.
 - One menu step per D-pad press, normal hold-to-repeat behavior, and working
   firearm input.
+- Stable horizontal overflow-text speed while alternating between 45 and 135
+  FPS; the Amrita Gauge pulse remained correct in the same build.
 - Clean startup after the final accessor-based implementation.
 
 Areas that still warrant broader regression testing include cutscenes, physics,

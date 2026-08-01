@@ -9,7 +9,7 @@ Proton and includes the required ASI loader.
 
 ## Status
 
-- Current version: 1.6.1.
+- Current version: 1.6.2.
 - Validated executable: Steam Nioh ProductVersion 1.24.8.0, dated 2022-08-25.
 - Validated executable SHA-256:
   `56006af3fc0945248aa7a2e33fd95d4e510f1dbe3395eb3644dae3c2806377f6`
@@ -19,6 +19,7 @@ Proton and includes the required ASI loader.
   and cloud animation retain their original wall-clock behavior above 60 FPS.
 - Normal and aiming camera sensitivity, menu navigation, and firearm input are
   also normalized without changing their original 60 FPS behavior.
+- Horizontally scrolling overflow text retains its original wall-clock speed.
 - The original 30 FPS profiles remain capped and use their stock timing.
 
 Other x64 `nioh.exe` builds are not rejected by version number. Before its
@@ -68,7 +69,7 @@ The timing corrections measure presentation intervals with
 framerates rather than assuming 120 or 130 FPS. Separate verified hooks
 normalize motion components, vegetation wind, SCL interface animation,
 statistical-ocean water, three cloud systems, normal and aiming camera input,
-and the transient/repeat input cadence used by menus.
+overflow-text movement, and the transient/repeat input cadence used by menus.
 
 ## Architecture
 
@@ -79,6 +80,10 @@ are declarative data in `signatures.hpp`; shared runtime contracts are in
 patch installation, monitoring, and process startup each have dedicated
 translation units. Resolved addresses exist only in the current process and
 are never written to configuration files.
+
+The 150-line source-file limit is a decomposition guideline. When a readable
+extension would exceed it, the relevant responsibility should move into a new
+focused file; code should not be compressed simply to remain under the limit.
 
 ## Build on Linux
 
@@ -101,7 +106,7 @@ cmake --build build-windows
 scripts/package.sh build-windows dist
 ```
 
-The package script creates `dist/Nioh1Fix-1.6.1.zip`. It downloads Ultimate
+The package script creates `dist/Nioh1Fix-1.6.2.zip`. It downloads Ultimate
 ASI Loader v9.7.1, verifies its SHA-256 digest, and renames the x64 proxy to
 `version.dll`.
 

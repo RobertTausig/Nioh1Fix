@@ -1,5 +1,4 @@
 #pragma once
-
 #include "runtime.hpp"
 namespace nioh1fix::runtime {
 consteval std::uint8_t HexDigit(char value) {
@@ -22,7 +21,6 @@ template <std::size_t N> consteval auto Pattern(const char (&text)[N]) {
     }
     return pattern;
 }
-
 inline constexpr auto kPresent = Pattern(
     "807D00007418488B4D0833D24885C9751A488B8FB02F0000448D4201EB10"
     "488B8FB02F00008B978C2F00004533C0488B01FF5040488B4F30");
@@ -58,6 +56,11 @@ inline constexpr auto kScl = Pattern(
     "8B5120F6C2017705F6C202766DF30F1061248BC283E0EF894120A8047610410F"
     "28C1F3410F5EC0F30F594134EB05F30F104128F30F10512C0F28CCF30F58C8"
     "0F2FD1F30F11492477060F2F493076120F");
+inline constexpr auto kTextScroll = Pattern(
+    "4883EC2880792F004C8BC90F846202000080792C000F84580200000FB74134"
+    "6685C0740E66FFC86689413433C04883C428C38B49504533C0B20185C97411"
+    "83E901742183E901743183F9017441EB4DF3410F104144410F2F413C724041"
+    "C74150");
 inline constexpr auto kOcean = Pattern(
     "48895C24104889742418574883EC408B812401000033D28B9958010000FFC0F7"
     "B1200100008B8154010000488BF1448BC283C003488B913804000083C3034489"
@@ -78,27 +81,25 @@ inline constexpr std::array<HookSpec, 8> kHooks{{
     {kCamera,44,10,64,-1,{10,9},2,"camera","Scaled the verified gameplay camera's controller and mouse input by the presentation interval."},
     {kAim,32,8,192,2,{3,4},2,"aiming-camera","Scaled the verified firearm and bow aiming camera input by the presentation interval."},
     {kGrass,51,9,128,1,{3,0},1,"grass-wind","Scaled the verified grass and bush wind phase by the presentation interval."},
-    {kScl,30,9,256,3,{0,0},1,"SCL-animation","Scaled the live seconds-based SCL interface animator by the presentation interval."},
+    {kScl,51,5,256,3,{0,0},1,"SCL-animation","Scaled the live SCL interface animator by the presentation interval."},
     {kOcean,0,5,320,4,{1,0},1,"statistical-ocean","Scaled the verified statistical-ocean animation update by the presentation interval."},
     {kCloudPlane,0,9,384,5,{1,0},1,"cloud-plane","Scaled the verified cloud-plane animation update by the presentation interval."},
     {kCloudCircle,0,7,448,6,{1,0},1,"cloud-circle","Scaled the verified cloud-circle animation update by the presentation interval."},
     {kCloudParticle,0,5,512,7,{1,0},1,"cloud-particle","Scaled the verified cloud-particle animation update by the presentation interval."}
 }};
-
-inline ResolveStatus ResolveCompatibility(const PeImage& image,
-                                           CompatibilityPlan& plan) {
-    std::array<SearchResult, 15> found{FindCode(image,kGameplay),
+inline ResolveStatus ResolveCompatibility(const PeImage& image, CompatibilityPlan& plan) {
+    std::array<SearchResult, 16> found{FindCode(image,kGameplay),
         FindCode(image,kLimiter), FindCode(image,kPresent),
         FindCode(image,kMotionSlots), FindCode(image,kLinkedMotion),
         FindCode(image,kMotionComponent), FindCode(image,kInput)};
     for (std::size_t i = 0; i < kHooks.size(); ++i)
         found[7 + i] = FindCode(image, kHooks[i].signature);
+    found[15] = FindCode(image, kTextScroll);
     for (const auto& match : found) if (match.count > 1) {
         Log("A required signature was ambiguous; no changes were made.");
         return ResolveStatus::incompatible;
     }
     for (const auto& match : found) if (!match.count) return ResolveStatus::pending;
-
     auto* active = DecodeRelative(found[0].address, 3, 7);
     auto* table = DecodeRelative(found[0].address + 11, 3, 7);
     const DWORD dataFlags = IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ;
@@ -139,6 +140,7 @@ inline ResolveStatus ResolveCompatibility(const PeImage& image,
     }
     plan.gameplay = found[0].address; plan.limiter = found[1].address;
     plan.present = found[2].address; plan.table = table;
+    plan.textScroll = found[15].address;
     plan.activeProfile = reinterpret_cast<volatile LONG*>(active);
     plan.inputTarget = reinterpret_cast<InputUpdateFunction>(inputTarget);
     plan.knownBuild = image.headers->FileHeader.TimeDateStamp == kSupportedTimestamp &&

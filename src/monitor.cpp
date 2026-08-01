@@ -40,6 +40,12 @@ static bool MaintainOptional(const PeImage& image, const CompatibilityPlan& plan
     if (patches.inputStatus == PatchStatus::installed && !IsApplied(patches.input)) {
         Log("The input cadence call changed unexpectedly."); return false;
     }
+    if (patches.textScrollStatus == PatchStatus::pending)
+        patches.textScrollStatus = InstallTextScrollHook(image, plan, patches);
+    if (patches.textScrollStatus == PatchStatus::installed &&
+        !IsApplied(patches.textScroll)) {
+        Log("The overflow-text scroll update changed unexpectedly."); return false;
+    }
     return true;
 }
 static const char* Normalized(PatchStatus status) {
@@ -59,6 +65,7 @@ static void LogSummary(const PatchSet& patches, unsigned reapplyCount) {
         << ", entity_animation=" << Normalized(patches.motionStatus)
         << ", vegetation_animation=" << Normalized(patches.hooks[2].status)
         << ", interface_animation=" << Normalized(patches.hooks[3].status)
+        << ", overflow_text_scrolling=" << Normalized(patches.textScrollStatus)
         << ", water_animation=" << Normalized(patches.hooks[4].status)
         << ", cloud_animation=" << (clouds ? "normalized" : "baseline")
         << ", camera_input=" << Normalized(patches.hooks[0].status)

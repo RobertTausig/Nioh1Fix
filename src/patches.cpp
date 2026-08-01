@@ -69,6 +69,36 @@ PatchStatus InstallInputHook(const PeImage& image,
     return PatchStatus::installed;
 }
 
+PatchStatus InstallTextScrollHook(const PeImage& image,
+    const CompatibilityPlan& plan, PatchSet& patches) {
+    if (!EnsureHookResources(image, patches.resources))
+        return PatchStatus::unavailable;
+    constexpr std::size_t copied = 8;
+    auto* trampoline = patches.resources.code + 576;
+    std::array<std::uint8_t, copied + 12> bytes{};
+    std::memcpy(bytes.data(), plan.textScroll, copied);
+    bytes[copied] = 0x48; bytes[copied + 1] = 0xB8;
+    const auto continuation = reinterpret_cast<std::uintptr_t>(
+        plan.textScroll + copied);
+    std::memcpy(bytes.data() + copied + 2, &continuation, 8);
+    bytes[copied + 10] = 0xFF; bytes[copied + 11] = 0xE0;
+    if (!WriteExecutable(trampoline, bytes) ||
+        !IsReachable(plan.textScroll + 5, patches.resources.code + 32))
+        return PatchStatus::unavailable;
+    std::array<std::uint8_t, copied> jump{0xE9,0,0,0,0,0x90,0x90,0x90};
+    const auto relative = std::int32_t(reinterpret_cast<std::intptr_t>(
+        patches.resources.code + 32) - reinterpret_cast<std::intptr_t>(
+        plan.textScroll + 5));
+    std::memcpy(jump.data() + 1, &relative, 4);
+    Prepare(patches.textScroll, plan.textScroll, jump);
+    g.originalTextScrollUpdate = reinterpret_cast<TextScrollUpdateFunction>(trampoline);
+    if (!Commit(patches.textScroll, "the overflow-text scroll update")) {
+        g.originalTextScrollUpdate = nullptr; return PatchStatus::unavailable;
+    }
+    Log("Normalized overflow-text scrolling to the presentation interval.");
+    return PatchStatus::installed;
+}
+
 static void PrepareAbsolute(PatchRecord& record, std::uint8_t* address,
                             std::size_t size, const void* destination) {
     std::array<std::uint8_t, 96> bytes{}; std::fill_n(bytes.data(), size, 0x90);

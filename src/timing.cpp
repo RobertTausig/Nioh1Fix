@@ -68,6 +68,18 @@ void NormalizedInputUpdate(void* manager) {
     }
 }
 
+bool NormalizedTextScrollUpdate(void* controller) {
+    if (g.timingData) InterlockedIncrement(g.timingData + 8);
+    if (!g.originalTextScrollUpdate) return false;
+    auto* speed = reinterpret_cast<float*>(
+        static_cast<std::uint8_t*>(controller) + 0x10);
+    const float original = *speed;
+    *speed = original * ReadTimingScale();
+    const bool result = g.originalTextScrollUpdate(controller);
+    *speed = original;
+    return result;
+}
+
 HRESULT AggressivePresent(void* renderer, const std::uint8_t* config) {
     auto* chain = *reinterpret_cast<void**>(static_cast<std::uint8_t*>(renderer) + 0x2FB0);
     UINT flags = 0x8;
@@ -121,7 +133,8 @@ void LogDiagnostics(std::uint8_t* table, DWORD elapsed) {
         << ", scl_animation_steps=" << Counter(3) << ", statistical_ocean_updates="
         << Counter(4) << ", cloud_plane_updates=" << Counter(5)
         << ", cloud_circle_updates=" << Counter(6) << ", cloud_particle_updates="
-        << Counter(7) << ", input_updates=" << g.inputUpdates
+        << Counter(7) << ", text_scroll_updates=" << Counter(8)
+        << ", input_updates=" << g.inputUpdates
         << ", input_accepted=" << g.inputAccepted << ", input_skipped=" << g.inputSkipped;
     const LONG64 ticks = InterlockedCompareExchange64(&g.lastPresentInterval, 0, 0);
     if (ticks > 0 && g.frequency.QuadPart > 0)
