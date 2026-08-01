@@ -190,13 +190,22 @@ speed, then inspect `Nioh1Fix.log`.
 
 ## Key Files
 
-- `src/dllmain.cpp`: runtime validation, hooks, diagnostics, and patch monitor.
-- `src/frame_profile.hpp`: pure frame-profile inspection and patching.
+- `src/core.hpp`: pure frame-profile and timing-scale logic.
+- `src/runtime.hpp`: shared runtime contracts, state, and constants.
+- `src/signatures.hpp`: declarative full signatures and timing-hook specs.
+- `src/platform.cpp`: logging, INI access, PE inspection, search, and writes.
+- `src/timing.cpp`: presentation measurement, callbacks, input, and diagnostics.
+- `src/hooks.cpp`: shared near-memory allocation and block-trampoline builder.
+- `src/patches.cpp`: motion, input, limiter, accessor, and Present patching.
+- `src/monitor.cpp`: patch installation state machine and integrity checks.
+- `src/dllmain.cpp`: supported-process validation and DLL entry point only.
 - `tests/frame_profile_tests.cpp`: native tests for profile behavior.
+- `tests/timing_scale_tests.cpp`: native tests for timing-scale behavior.
 - `Nioh1Fix.ini`: runtime enable switch.
 - `docs/research.md`: reverse-engineering record.
 - `scripts/package.sh`: Linux packaging and pinned ASI loader.
 - `scripts/package.ps1`: Windows packaging.
 
-The native tests cover only the profile-table logic. Hook correctness still
-requires runtime validation on the supported executable.
+Keep the files under `src/` at or below 150 lines each. The native tests
+cover portable profile and timing math. Hook correctness still requires runtime
+validation on the supported executable.

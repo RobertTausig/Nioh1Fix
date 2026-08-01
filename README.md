@@ -65,6 +65,15 @@ normalize motion components, vegetation wind, SCL interface animation,
 statistical-ocean water, three cloud systems, normal and aiming camera input,
 and the transient/repeat input cadence used by menus.
 
+## Architecture
+
+The Windows runtime is split by responsibility across files under `src/`.
+Pure profile and timing calculations live in `core.hpp`; executable signatures
+are declarative data in `signatures.hpp`; shared runtime contracts are in
+`runtime.hpp`. Platform access, timing callbacks, generic hook construction,
+patch installation, monitoring, and process startup each have dedicated
+translation units.
+
 ## Build on Linux
 
 Build and run the platform-independent profile-table tests:

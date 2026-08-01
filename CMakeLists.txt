@@ -4,13 +4,37 @@ project(Nioh1Fix VERSION 1.6.1 LANGUAGES CXX)
 
 include(CTest)
 
-add_library(frame_profile INTERFACE)
-target_include_directories(frame_profile INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-target_compile_features(frame_profile INTERFACE cxx_std_20)
+file(GLOB nioh1fix_source_files CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.hpp"
+)
+list(LENGTH nioh1fix_source_files nioh1fix_source_count)
+if(nioh1fix_source_count LESS 7 OR nioh1fix_source_count GREATER 9)
+    message(FATAL_ERROR "src/ must contain between 7 and 9 source files")
+endif()
+foreach(source_file IN LISTS nioh1fix_source_files)
+    file(READ "${source_file}" source_contents)
+    string(REGEX MATCHALL "\n" source_line_breaks "${source_contents}")
+    list(LENGTH source_line_breaks source_line_count)
+    if(source_line_count GREATER 150)
+        message(FATAL_ERROR "${source_file} exceeds the 150-line limit")
+    endif()
+endforeach()
+
+add_library(nioh1fix_core INTERFACE)
+target_include_directories(nioh1fix_core INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(nioh1fix_core INTERFACE cxx_std_20)
 
 if(WIN32)
-    add_library(Nioh1Fix SHARED src/dllmain.cpp)
-    target_link_libraries(Nioh1Fix PRIVATE frame_profile)
+    add_library(Nioh1Fix SHARED
+        src/dllmain.cpp
+        src/hooks.cpp
+        src/monitor.cpp
+        src/patches.cpp
+        src/platform.cpp
+        src/timing.cpp
+    )
+    target_link_libraries(Nioh1Fix PRIVATE nioh1fix_core)
     target_compile_definitions(Nioh1Fix PRIVATE
         NOMINMAX
         UNICODE
@@ -37,10 +61,10 @@ endif()
 
 if(BUILD_TESTING)
     add_executable(frame_profile_tests tests/frame_profile_tests.cpp)
-    target_link_libraries(frame_profile_tests PRIVATE frame_profile)
+    target_link_libraries(frame_profile_tests PRIVATE nioh1fix_core)
     add_test(NAME frame_profile_tests COMMAND frame_profile_tests)
 
     add_executable(timing_scale_tests tests/timing_scale_tests.cpp)
-    target_link_libraries(timing_scale_tests PRIVATE frame_profile)
+    target_link_libraries(timing_scale_tests PRIVATE nioh1fix_core)
     add_test(NAME timing_scale_tests COMMAND timing_scale_tests)
 endif()
