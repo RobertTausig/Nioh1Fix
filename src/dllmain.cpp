@@ -122,6 +122,16 @@ constexpr std::array<std::uint8_t, 80> kSclAnimationSignature{
     0x0F, 0x58, 0xC8, 0x0F, 0x2F, 0xD1, 0xF3, 0x0F, 0x11, 0x49, 0x24, 0x77,
     0x06, 0x0F, 0x2F, 0x49, 0x30, 0x76, 0x12, 0x0F,
 };
+constexpr std::array<std::uint8_t, 96> kStatisticalOceanUpdateSignature{
+    0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 0x48,
+    0x83, 0xEC, 0x40, 0x8B, 0x81, 0x24, 0x01, 0x00, 0x00, 0x33, 0xD2, 0x8B,
+    0x99, 0x58, 0x01, 0x00, 0x00, 0xFF, 0xC0, 0xF7, 0xB1, 0x20, 0x01, 0x00,
+    0x00, 0x8B, 0x81, 0x54, 0x01, 0x00, 0x00, 0x48, 0x8B, 0xF1, 0x44, 0x8B,
+    0xC2, 0x83, 0xC0, 0x03, 0x48, 0x8B, 0x91, 0x38, 0x04, 0x00, 0x00, 0x83,
+    0xC3, 0x03, 0x44, 0x89, 0x81, 0x24, 0x01, 0x00, 0x00, 0x48, 0x8B, 0x49,
+    0x10, 0x0F, 0x29, 0x74, 0x24, 0x30, 0x0F, 0x28, 0xF1, 0x4A, 0x8B, 0x14,
+    0xC2, 0x0F, 0xAF, 0xD8, 0xE8, 0xD3, 0x34, 0xF3, 0xFF, 0x8B, 0x8E, 0x24,
+};
 constexpr std::size_t kMotionSlotsCallOffset = 21;
 constexpr std::size_t kLinkedMotionCallOffset = 32;
 constexpr std::size_t kMotionComponentCallOffset = 14;
@@ -134,6 +144,7 @@ constexpr std::size_t kGrassWindScaleBlockOffset = 51;
 constexpr std::size_t kGrassWindScaleBlockSize = 9;
 constexpr std::size_t kSclAnimationScaleBlockOffset = 30;
 constexpr std::size_t kSclAnimationScaleBlockSize = 9;
+constexpr std::size_t kStatisticalOceanScaleBlockSize = 5;
 constexpr std::size_t kInputPlayerCount = 4;
 constexpr std::size_t kInputPlayerStride = 0x1C0;
 constexpr std::size_t kInputPressedMaskOffset = 0x30;
@@ -159,6 +170,7 @@ volatile LONG* gCameraScaleBits{};
 volatile LONG* gAimCameraCallCount{};
 volatile LONG* gGrassWindCallCount{};
 volatile LONG* gSclAnimationStepCount{};
+volatile LONG* gStatisticalOceanUpdateCount{};
 volatile LONG gMotionDeltaCallCount{};
 volatile LONG gInputUpdateCallCount{};
 volatile LONG gInputAcceptedCount{};
@@ -610,6 +622,12 @@ struct SclAnimationPatch
     std::array<std::uint8_t, kSclAnimationScaleBlockSize> bytes{};
 };
 
+struct StatisticalOceanPatch
+{
+    std::uint8_t* address{};
+    std::array<std::uint8_t, kStatisticalOceanScaleBlockSize> bytes{};
+};
+
 struct TimingHookResources
 {
     std::uint8_t* code{};
@@ -620,6 +638,7 @@ struct TimingHookResources
     std::uint8_t* grassWindStub{};
     std::uint8_t* aimCameraStub{};
     std::uint8_t* sclAnimationStub{};
+    std::uint8_t* statisticalOceanStub{};
 };
 
 struct OptionalTimingPatches
@@ -629,6 +648,7 @@ struct OptionalTimingPatches
     OptionalPatchStatus aimCamera{OptionalPatchStatus::pending};
     OptionalPatchStatus vegetation{OptionalPatchStatus::pending};
     OptionalPatchStatus interfaceAnimation{OptionalPatchStatus::pending};
+    OptionalPatchStatus waterAnimation{OptionalPatchStatus::pending};
     OptionalPatchStatus menu{OptionalPatchStatus::pending};
     TimingHookResources resources{};
     std::array<RelativePatch, 3> animationCalls{};
@@ -637,6 +657,7 @@ struct OptionalTimingPatches
     GrassWindPatch grassWindBlock{};
     AimCameraPatch aimCameraBlock{};
     SclAnimationPatch sclAnimationBlock{};
+    StatisticalOceanPatch statisticalOceanBlock{};
 };
 
 bool IsRelativeReachable(const void* instructionEnd, const void* destination)
@@ -751,6 +772,7 @@ bool EnsureTimingHookResources(const PeImage& image,
     resources.grassWindStub = code + 128;
     resources.aimCameraStub = code + 192;
     resources.sclAnimationStub = code + 256;
+    resources.statisticalOceanStub = code + 320;
 
     const auto motionJump =
         MakeAbsoluteJump(reinterpret_cast<const void*>(&GetNormalizedMotionDelta));
@@ -763,6 +785,7 @@ bool EnsureTimingHookResources(const PeImage& image,
     *reinterpret_cast<LONG*>(resources.data + sizeof(LONG)) = 0;
     *reinterpret_cast<LONG*>(resources.data + 2 * sizeof(LONG)) = 0;
     *reinterpret_cast<LONG*>(resources.data + 3 * sizeof(LONG)) = 0;
+    *reinterpret_cast<LONG*>(resources.data + 4 * sizeof(LONG)) = 0;
 
     DWORD oldProtection{};
     if (!VirtualProtect(code, 4096, PAGE_EXECUTE_READ, &oldProtection)) {
@@ -780,6 +803,8 @@ bool EnsureTimingHookResources(const PeImage& image,
         reinterpret_cast<volatile LONG*>(data + 2 * sizeof(LONG));
     gSclAnimationStepCount =
         reinterpret_cast<volatile LONG*>(data + 3 * sizeof(LONG));
+    gStatisticalOceanUpdateCount =
+        reinterpret_cast<volatile LONG*>(data + 4 * sizeof(LONG));
     return true;
 }
 
@@ -1326,6 +1351,109 @@ OptionalPatchStatus TryInstallSclAnimationTiming(
     return OptionalPatchStatus::installed;
 }
 
+OptionalPatchStatus TryInstallStatisticalOceanTiming(
+    const PeImage& image,
+    OptionalTimingPatches& patches)
+{
+    const auto ocean = FindCodePattern(
+        image,
+        std::span<const std::uint8_t>(kStatisticalOceanUpdateSignature));
+    if (ocean.count > 1) {
+        Log("The statistical-ocean update signature was ambiguous; water "
+            "animation normalization was not installed.");
+        return OptionalPatchStatus::unavailable;
+    }
+    if (ocean.count == 0) {
+        return OptionalPatchStatus::pending;
+    }
+    if (!EnsureTimingHookResources(image, patches.resources)) {
+        return OptionalPatchStatus::unavailable;
+    }
+
+    auto* block = ocean.address;
+    auto* continuation = block + kStatisticalOceanScaleBlockSize;
+    auto* stub = patches.resources.statisticalOceanStub;
+    std::array<std::uint8_t, 25> stubBytes{};
+    std::memcpy(stubBytes.data(),
+                block,
+                kStatisticalOceanScaleBlockSize);
+
+    const std::array<std::uint8_t, 8> multiplyXmm1{
+        0xF3, 0x0F, 0x59, 0x0D, 0, 0, 0, 0,
+    };
+    const std::array<std::uint8_t, 7> incrementCounter{
+        0xF0, 0xFF, 0x05, 0, 0, 0, 0,
+    };
+    std::memcpy(stubBytes.data() + 5,
+                multiplyXmm1.data(),
+                multiplyXmm1.size());
+    std::memcpy(stubBytes.data() + 13,
+                incrementCounter.data(),
+                incrementCounter.size());
+
+    auto* scale = patches.resources.data;
+    auto* counter = patches.resources.data + 4 * sizeof(LONG);
+    if (!IsRelativeReachable(stub + 13, scale) ||
+        !IsRelativeReachable(stub + 20, counter)) {
+        Log("The statistical-ocean stub could not reach its timing data.");
+        return OptionalPatchStatus::unavailable;
+    }
+    const auto scaleDisplacement = static_cast<std::int32_t>(
+        reinterpret_cast<std::intptr_t>(scale) -
+        reinterpret_cast<std::intptr_t>(stub + 13));
+    const auto counterDisplacement = static_cast<std::int32_t>(
+        reinterpret_cast<std::intptr_t>(counter) -
+        reinterpret_cast<std::intptr_t>(stub + 20));
+    std::memcpy(stubBytes.data() + 9,
+                &scaleDisplacement,
+                sizeof(scaleDisplacement));
+    std::memcpy(stubBytes.data() + 16,
+                &counterDisplacement,
+                sizeof(counterDisplacement));
+
+    stubBytes[20] = 0xE9;
+    if (!IsRelativeReachable(stub + 25, continuation)) {
+        Log("The statistical-ocean stub could not reach its continuation.");
+        return OptionalPatchStatus::unavailable;
+    }
+    const auto continuationDisplacement = static_cast<std::int32_t>(
+        reinterpret_cast<std::intptr_t>(continuation) -
+        reinterpret_cast<std::intptr_t>(stub + 25));
+    std::memcpy(stubBytes.data() + 21,
+                &continuationDisplacement,
+                sizeof(continuationDisplacement));
+    if (!WriteExecutableRegion(stub, stubBytes)) {
+        Log("Could not write the statistical-ocean timing stub.");
+        return OptionalPatchStatus::unavailable;
+    }
+
+    std::array<std::uint8_t, kStatisticalOceanScaleBlockSize> original{};
+    std::memcpy(original.data(), block, original.size());
+    patches.statisticalOceanBlock.bytes.fill(0x90);
+    patches.statisticalOceanBlock.bytes[0] = 0xE9;
+    if (!IsRelativeReachable(block + 5, stub)) {
+        Log("The statistical-ocean timing branch could not reach its "
+            "verified stub.");
+        return OptionalPatchStatus::unavailable;
+    }
+    const auto stubDisplacement = static_cast<std::int32_t>(
+        reinterpret_cast<std::intptr_t>(stub) -
+        reinterpret_cast<std::intptr_t>(block + 5));
+    std::memcpy(patches.statisticalOceanBlock.bytes.data() + 1,
+                &stubDisplacement,
+                sizeof(stubDisplacement));
+    if (!PatchCode(block,
+                   original,
+                   patches.statisticalOceanBlock.bytes,
+                   "the statistical-ocean update delta")) {
+        return OptionalPatchStatus::unavailable;
+    }
+    patches.statisticalOceanBlock.address = block;
+    Log("Scaled the verified statistical-ocean animation update by the "
+        "presentation interval.");
+    return OptionalPatchStatus::installed;
+}
+
 struct GameplayFpsPatch
 {
     std::uint8_t* address{};
@@ -1665,6 +1793,20 @@ bool MonitorRuntimePatches(const PeImage& image,
             return false;
         }
 
+        if (optionalPatches.waterAnimation == OptionalPatchStatus::pending) {
+            optionalPatches.waterAnimation =
+                TryInstallStatisticalOceanTiming(image, optionalPatches);
+        } else if (
+            optionalPatches.waterAnimation == OptionalPatchStatus::installed &&
+            (!optionalPatches.statisticalOceanBlock.address ||
+             std::memcmp(optionalPatches.statisticalOceanBlock.address,
+                         optionalPatches.statisticalOceanBlock.bytes.data(),
+                         optionalPatches.statisticalOceanBlock.bytes.size()) !=
+                 0)) {
+            Log("The statistical-ocean timing block changed unexpectedly.");
+            return false;
+        }
+
         if (optionalPatches.menu == OptionalPatchStatus::pending) {
             optionalPatches.menu =
                 TryInstallInputCadence(image, optionalPatches);
@@ -1716,6 +1858,8 @@ bool MonitorRuntimePatches(const PeImage& image,
                         << ReadHookCounter(gGrassWindCallCount)
                         << ", scl_animation_steps="
                         << ReadHookCounter(gSclAnimationStepCount)
+                        << ", statistical_ocean_updates="
+                        << ReadHookCounter(gStatisticalOceanUpdateCount)
                         << ", input_updates=" << gInputUpdateCallCount
                         << ", input_accepted=" << gInputAcceptedCount
                         << ", input_skipped=" << gInputSkippedCount;
@@ -1784,6 +1928,10 @@ bool MonitorRuntimePatches(const PeImage& image,
            << ", interface_animation="
            << (optionalPatches.interfaceAnimation ==
                        OptionalPatchStatus::installed
+                   ? "normalized"
+                   : "baseline")
+           << ", water_animation="
+           << (optionalPatches.waterAnimation == OptionalPatchStatus::installed
                    ? "normalized"
                    : "baseline")
            << ", camera_input="
