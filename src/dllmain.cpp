@@ -113,6 +113,15 @@ constexpr std::array<std::uint8_t, 78> kGrassWindSignature{
     0xE8, 0xF6, 0xBE, 0xA2, 0xFF, 0x48, 0x8B, 0xB7, 0x08, 0x04, 0x00, 0x00,
     0x41, 0xBE, 0x00, 0x00, 0x00, 0x00,
 };
+constexpr std::array<std::uint8_t, 80> kSclAnimationSignature{
+    0x8B, 0x51, 0x20, 0xF6, 0xC2, 0x01, 0x77, 0x05, 0xF6, 0xC2, 0x02, 0x76,
+    0x6D, 0xF3, 0x0F, 0x10, 0x61, 0x24, 0x8B, 0xC2, 0x83, 0xE0, 0xEF, 0x89,
+    0x41, 0x20, 0xA8, 0x04, 0x76, 0x10, 0x41, 0x0F, 0x28, 0xC1, 0xF3, 0x41,
+    0x0F, 0x5E, 0xC0, 0xF3, 0x0F, 0x59, 0x41, 0x34, 0xEB, 0x05, 0xF3, 0x0F,
+    0x10, 0x41, 0x28, 0xF3, 0x0F, 0x10, 0x51, 0x2C, 0x0F, 0x28, 0xCC, 0xF3,
+    0x0F, 0x58, 0xC8, 0x0F, 0x2F, 0xD1, 0xF3, 0x0F, 0x11, 0x49, 0x24, 0x77,
+    0x06, 0x0F, 0x2F, 0x49, 0x30, 0x76, 0x12, 0x0F,
+};
 constexpr std::size_t kMotionSlotsCallOffset = 21;
 constexpr std::size_t kLinkedMotionCallOffset = 32;
 constexpr std::size_t kMotionComponentCallOffset = 14;
@@ -123,6 +132,8 @@ constexpr std::size_t kAimCameraScaleBlockOffset = 32;
 constexpr std::size_t kAimCameraScaleBlockSize = 8;
 constexpr std::size_t kGrassWindScaleBlockOffset = 51;
 constexpr std::size_t kGrassWindScaleBlockSize = 9;
+constexpr std::size_t kSclAnimationScaleBlockOffset = 30;
+constexpr std::size_t kSclAnimationScaleBlockSize = 9;
 constexpr std::size_t kInputPlayerCount = 4;
 constexpr std::size_t kInputPlayerStride = 0x1C0;
 constexpr std::size_t kInputPressedMaskOffset = 0x30;
@@ -147,6 +158,7 @@ volatile LONG gTimingScaleBits{0x3F800000};
 volatile LONG* gCameraScaleBits{};
 volatile LONG* gAimCameraCallCount{};
 volatile LONG* gGrassWindCallCount{};
+volatile LONG* gSclAnimationStepCount{};
 volatile LONG gMotionDeltaCallCount{};
 volatile LONG gInputUpdateCallCount{};
 volatile LONG gInputAcceptedCount{};
@@ -592,6 +604,12 @@ struct AimCameraPatch
     std::array<std::uint8_t, kAimCameraScaleBlockSize> bytes{};
 };
 
+struct SclAnimationPatch
+{
+    std::uint8_t* address{};
+    std::array<std::uint8_t, kSclAnimationScaleBlockSize> bytes{};
+};
+
 struct TimingHookResources
 {
     std::uint8_t* code{};
@@ -601,6 +619,7 @@ struct TimingHookResources
     std::uint8_t* cameraStub{};
     std::uint8_t* grassWindStub{};
     std::uint8_t* aimCameraStub{};
+    std::uint8_t* sclAnimationStub{};
 };
 
 struct OptionalTimingPatches
@@ -609,6 +628,7 @@ struct OptionalTimingPatches
     OptionalPatchStatus camera{OptionalPatchStatus::pending};
     OptionalPatchStatus aimCamera{OptionalPatchStatus::pending};
     OptionalPatchStatus vegetation{OptionalPatchStatus::pending};
+    OptionalPatchStatus interfaceAnimation{OptionalPatchStatus::pending};
     OptionalPatchStatus menu{OptionalPatchStatus::pending};
     TimingHookResources resources{};
     std::array<RelativePatch, 3> animationCalls{};
@@ -616,6 +636,7 @@ struct OptionalTimingPatches
     CameraPatch cameraBlock{};
     GrassWindPatch grassWindBlock{};
     AimCameraPatch aimCameraBlock{};
+    SclAnimationPatch sclAnimationBlock{};
 };
 
 bool IsRelativeReachable(const void* instructionEnd, const void* destination)
@@ -729,6 +750,7 @@ bool EnsureTimingHookResources(const PeImage& image,
     resources.cameraStub = code + 64;
     resources.grassWindStub = code + 128;
     resources.aimCameraStub = code + 192;
+    resources.sclAnimationStub = code + 256;
 
     const auto motionJump =
         MakeAbsoluteJump(reinterpret_cast<const void*>(&GetNormalizedMotionDelta));
@@ -740,6 +762,7 @@ bool EnsureTimingHookResources(const PeImage& image,
         FloatBits(ReadTimingScale());
     *reinterpret_cast<LONG*>(resources.data + sizeof(LONG)) = 0;
     *reinterpret_cast<LONG*>(resources.data + 2 * sizeof(LONG)) = 0;
+    *reinterpret_cast<LONG*>(resources.data + 3 * sizeof(LONG)) = 0;
 
     DWORD oldProtection{};
     if (!VirtualProtect(code, 4096, PAGE_EXECUTE_READ, &oldProtection)) {
@@ -755,6 +778,8 @@ bool EnsureTimingHookResources(const PeImage& image,
         reinterpret_cast<volatile LONG*>(data + sizeof(LONG));
     gAimCameraCallCount =
         reinterpret_cast<volatile LONG*>(data + 2 * sizeof(LONG));
+    gSclAnimationStepCount =
+        reinterpret_cast<volatile LONG*>(data + 3 * sizeof(LONG));
     return true;
 }
 
@@ -1201,6 +1226,106 @@ OptionalPatchStatus TryInstallVegetationTiming(
     return OptionalPatchStatus::installed;
 }
 
+OptionalPatchStatus TryInstallSclAnimationTiming(
+    const PeImage& image,
+    OptionalTimingPatches& patches)
+{
+    const auto animation = FindCodePattern(
+        image, std::span<const std::uint8_t>(kSclAnimationSignature));
+    if (animation.count > 1) {
+        Log("The live SCL-animation signature was ambiguous; interface "
+            "animation normalization was not installed.");
+        return OptionalPatchStatus::unavailable;
+    }
+    if (animation.count == 0) {
+        return OptionalPatchStatus::pending;
+    }
+    if (!EnsureTimingHookResources(image, patches.resources)) {
+        return OptionalPatchStatus::unavailable;
+    }
+
+    auto* block = animation.address + kSclAnimationScaleBlockOffset;
+    auto* continuation = block + kSclAnimationScaleBlockSize;
+    auto* stub = patches.resources.sclAnimationStub;
+    std::array<std::uint8_t, 29> stubBytes{};
+    std::memcpy(stubBytes.data(), block, kSclAnimationScaleBlockSize);
+
+    const std::array<std::uint8_t, 8> multiplyXmm0{
+        0xF3, 0x0F, 0x59, 0x05, 0, 0, 0, 0,
+    };
+    const std::array<std::uint8_t, 7> incrementCounter{
+        0xF0, 0xFF, 0x05, 0, 0, 0, 0,
+    };
+    std::memcpy(stubBytes.data() + 9,
+                multiplyXmm0.data(),
+                multiplyXmm0.size());
+    std::memcpy(stubBytes.data() + 17,
+                incrementCounter.data(),
+                incrementCounter.size());
+
+    auto* scale = patches.resources.data;
+    auto* counter = patches.resources.data + 3 * sizeof(LONG);
+    if (!IsRelativeReachable(stub + 17, scale) ||
+        !IsRelativeReachable(stub + 24, counter)) {
+        Log("The SCL-animation stub could not reach its timing data.");
+        return OptionalPatchStatus::unavailable;
+    }
+    const auto scaleDisplacement = static_cast<std::int32_t>(
+        reinterpret_cast<std::intptr_t>(scale) -
+        reinterpret_cast<std::intptr_t>(stub + 17));
+    const auto counterDisplacement = static_cast<std::int32_t>(
+        reinterpret_cast<std::intptr_t>(counter) -
+        reinterpret_cast<std::intptr_t>(stub + 24));
+    std::memcpy(stubBytes.data() + 13,
+                &scaleDisplacement,
+                sizeof(scaleDisplacement));
+    std::memcpy(stubBytes.data() + 20,
+                &counterDisplacement,
+                sizeof(counterDisplacement));
+
+    stubBytes[24] = 0xE9;
+    if (!IsRelativeReachable(stub + 29, continuation)) {
+        Log("The SCL-animation stub could not reach its continuation.");
+        return OptionalPatchStatus::unavailable;
+    }
+    const auto continuationDisplacement = static_cast<std::int32_t>(
+        reinterpret_cast<std::intptr_t>(continuation) -
+        reinterpret_cast<std::intptr_t>(stub + 29));
+    std::memcpy(stubBytes.data() + 25,
+                &continuationDisplacement,
+                sizeof(continuationDisplacement));
+    if (!WriteExecutableRegion(stub, stubBytes)) {
+        Log("Could not write the SCL-animation timing stub.");
+        return OptionalPatchStatus::unavailable;
+    }
+
+    std::array<std::uint8_t, kSclAnimationScaleBlockSize> original{};
+    std::memcpy(original.data(), block, original.size());
+    patches.sclAnimationBlock.bytes.fill(0x90);
+    patches.sclAnimationBlock.bytes[0] = 0xE9;
+    if (!IsRelativeReachable(block + 5, stub)) {
+        Log("The SCL-animation timing branch could not reach its verified "
+            "stub.");
+        return OptionalPatchStatus::unavailable;
+    }
+    const auto stubDisplacement = static_cast<std::int32_t>(
+        reinterpret_cast<std::intptr_t>(stub) -
+        reinterpret_cast<std::intptr_t>(block + 5));
+    std::memcpy(patches.sclAnimationBlock.bytes.data() + 1,
+                &stubDisplacement,
+                sizeof(stubDisplacement));
+    if (!PatchCode(block,
+                   original,
+                   patches.sclAnimationBlock.bytes,
+                   "the live seconds-based SCL-animation scale")) {
+        return OptionalPatchStatus::unavailable;
+    }
+    patches.sclAnimationBlock.address = block;
+    Log("Scaled the live seconds-based SCL interface animator by the "
+        "presentation interval.");
+    return OptionalPatchStatus::installed;
+}
+
 struct GameplayFpsPatch
 {
     std::uint8_t* address{};
@@ -1524,6 +1649,22 @@ bool MonitorRuntimePatches(const PeImage& image,
             return false;
         }
 
+        if (optionalPatches.interfaceAnimation ==
+            OptionalPatchStatus::pending) {
+            optionalPatches.interfaceAnimation =
+                TryInstallSclAnimationTiming(image, optionalPatches);
+        } else if (
+            optionalPatches.interfaceAnimation ==
+                OptionalPatchStatus::installed &&
+            (!optionalPatches.sclAnimationBlock.address ||
+             std::memcmp(optionalPatches.sclAnimationBlock.address,
+                         optionalPatches.sclAnimationBlock.bytes.data(),
+                         optionalPatches.sclAnimationBlock.bytes.size()) != 0)) {
+            Log("The SCL-interface animation timing block changed "
+                "unexpectedly.");
+            return false;
+        }
+
         if (optionalPatches.menu == OptionalPatchStatus::pending) {
             optionalPatches.menu =
                 TryInstallInputCadence(image, optionalPatches);
@@ -1573,6 +1714,8 @@ bool MonitorRuntimePatches(const PeImage& image,
                         << ReadHookCounter(gAimCameraCallCount)
                         << ", grass_wind_updates="
                         << ReadHookCounter(gGrassWindCallCount)
+                        << ", scl_animation_steps="
+                        << ReadHookCounter(gSclAnimationStepCount)
                         << ", input_updates=" << gInputUpdateCallCount
                         << ", input_accepted=" << gInputAcceptedCount
                         << ", input_skipped=" << gInputSkippedCount;
@@ -1636,6 +1779,11 @@ bool MonitorRuntimePatches(const PeImage& image,
                    : "baseline")
            << ", vegetation_animation="
            << (optionalPatches.vegetation == OptionalPatchStatus::installed
+                   ? "normalized"
+                   : "baseline")
+           << ", interface_animation="
+           << (optionalPatches.interfaceAnimation ==
+                       OptionalPatchStatus::installed
                    ? "normalized"
                    : "baseline")
            << ", camera_input="
