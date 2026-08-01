@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+readonly script_directory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+readonly repository_directory="$(dirname -- "${script_directory}")"
 readonly toolchain_version="20260616"
 readonly toolchain_archive="llvm-mingw-${toolchain_version}-ucrt-ubuntu-22.04-x86_64.tar.xz"
 readonly toolchain_url="https://github.com/mstorsjo/llvm-mingw/releases/download/${toolchain_version}/${toolchain_archive}"
@@ -9,6 +11,7 @@ readonly cache_directory="${XDG_CACHE_HOME:-${HOME}/.cache}/nioh1fix"
 readonly toolchain_directory="${cache_directory}/llvm-mingw-${toolchain_version}"
 readonly archive_path="${cache_directory}/${toolchain_archive}"
 
+cd "${repository_directory}"
 mkdir -p "${cache_directory}"
 if [[ ! -x "${toolchain_directory}/bin/x86_64-w64-mingw32-clang++" ]]; then
     curl -fL --retry 2 "${toolchain_url}" -o "${archive_path}"
