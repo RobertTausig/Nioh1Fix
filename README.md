@@ -7,7 +7,8 @@ It corrects the framerate-dependent behavior of:
 
 - player and enemy animation;
 - grass, bushes, water, clouds, and the Amrita Gauge;
-- normal and aiming camera sensitivity;
+- normal and aiming camera sensitivity, including directional lock-on target
+  switching;
 - menu navigation and horizontally scrolling menu text;
 - firearm input.
 

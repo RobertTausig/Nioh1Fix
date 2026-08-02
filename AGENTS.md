@@ -5,11 +5,12 @@
 Nioh1Fix unlocks Nioh: Complete Edition on Linux/Proton and compensates
 Katana Engine gameplay timing dynamically. Version 1.7.0 retains the validated
 1.6.0 timing implementation and no longer exposes the internal 120 FPS startup
-target as user configuration. The implementation has been validated at 130
-FPS and while changing external framerate caps during gameplay. Player and
-ordinary enemy animation, grass and bush wind, the Amrita Gauge pulse, water,
-cloud movement, normal and aiming camera sensitivity, menu navigation, and
-firearm input are validated. Horizontal overflow-text scrolling is normalized.
+target as user configuration. The implementation has been validated across
+arbitrary framerates and while changing external caps during gameplay. Player
+and ordinary enemy animation, grass and bush wind, the Amrita Gauge pulse,
+water, cloud movement, normal and aiming camera sensitivity, menu navigation,
+firearm input, and directional lock-on target switching are validated.
+Horizontal overflow-text scrolling is normalized.
 
 Do not replace the working implementation with an earlier experimental
 approach without new evidence.
@@ -91,11 +92,13 @@ This empirical factor of two is required. Returning measured FPS improved but
 did not fully correct speed. Returning 60 made animation much faster.
 
 Separate unique-signature hooks scale three motion-component paths, normal
-camera input, firearm/bow aiming input, grass/bush wind animation, the active
-SCL interface animator, statistical-ocean water, and three cloud systems by
-the measured presentation interval. A 60 Hz cadence gate clears only transient
-and repeat input masks on skipped samples; the original input update still
-runs every render frame.
+camera rotation coefficients, firearm/bow aiming input, grass/bush wind
+animation, the active SCL interface animator, statistical-ocean water, and
+three cloud systems by the measured presentation interval. The raw normal-
+camera axes remain unscaled because lock-on target switching compares them
+with a fixed input threshold. A 60 Hz cadence gate runs the original input
+update on accepted samples and clears transient and repeat masks on skipped
+invocations.
 
 Normal aggressive enemies confirmed correct idle, locomotion, blocking, and
 attack animation timing. Passive tutorial enemies had been mistaken for a
@@ -147,6 +150,11 @@ plan that validates all locations before the first write.
   stack pointer, and caused a startup crash. The hook was later removed.
 - Returning a fixed 60 from `0x00E7D150`: compensation direction was wrong and
   animation became much faster.
+- Calling the original input update on every cadence-gate invocation regressed
+  menu navigation and did not fix lock-on switching.
+- Scaling the raw normal-camera axes weakened lock-on target switching because
+  the engine compares those same values with a fixed threshold. Scale the
+  camera rotation coefficients instead.
 - Scaling the fixed one-layout-frame branch of `CAnimatorBase@scl@ktgl@@` at
   RVA `0x0056D77C` did not affect the Amrita Gauge pulse. The active
   seconds-based branch at RVA `0x0053370A` is the validated fix.

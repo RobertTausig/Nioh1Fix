@@ -103,10 +103,12 @@ displacements are wildcarded. The RVAs above are diagnostic references, not
 patch targets. The timing scale is bounded during startup, cap changes, jitter,
 and stalls; stock 30 FPS profiles use a scale of one.
 
-The input cadence gate calls the original input update every render frame.
-Only transient and repeat masks are cleared on skipped cadence samples. This
-preserves analog state and firearm trigger handling while preventing one D-pad
-press from producing several menu transitions.
+The input cadence gate calls the original input update on accepted 60 Hz
+samples. Transient and repeat masks are cleared on skipped invocations. This
+preserves firearm trigger handling while preventing one D-pad press from
+producing several menu transitions. Calling the original update on every
+invocation advanced internal repeat state too frequently and regressed menu
+navigation.
 
 Testing initially suggested that enemy movement needed another pathfinding
 hook. Those observations came from passive tutorial enemies. Normal aggressive
@@ -179,15 +181,16 @@ fully validated compatibility plan derived from relocation-aware signatures.
 
 Validated on Linux with Proton:
 
-- 130 FPS in menus and gameplay.
+- Arbitrary framerates in menus and gameplay.
 - Runtime changes between external FPS caps.
 - Stable player, ordinary enemy, grass, bush, Amrita Gauge pulse, water, and
   cloud animation duration in wall-clock seconds.
 - Stable normal and firearm/bow aiming-camera sensitivity.
+- Reliable directional lock-on target switching across arbitrary framerates.
 - One menu step per D-pad press, normal hold-to-repeat behavior, and working
   firearm input.
-- Stable horizontal overflow-text speed while alternating between 45 and 135
-  FPS; the Amrita Gauge pulse remained correct in the same build.
+- Stable horizontal overflow-text speed while changing external caps; the
+  Amrita Gauge pulse remained correct in the same build.
 - Clean startup after the final accessor-based implementation.
 
 Areas that still warrant broader regression testing include cutscenes, physics,
