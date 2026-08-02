@@ -79,7 +79,7 @@ inline constexpr auto kCloudParticle = Pattern(
     "0F28E1440F296C2450440F29742440398180010000761A69816C010000CD0D01");
 inline constexpr std::array<std::uint8_t, 6> kLimiterPatch{0xC3,0x90,0x90,0x90,0x90,0x90};
 inline constexpr std::array<HookSpec, 8> kHooks{{
-    {kCamera,44,10,64,-1,{10,9},2,"camera","Scaled the verified gameplay camera's controller and mouse input by the presentation interval."},
+    {kCamera,44,10,64,-1,{7,8},2,"camera","Scaled the verified gameplay camera rotation response while preserving raw lock-on selection input."},
     {kAim,32,8,192,2,{3,4},2,"aiming-camera","Scaled the verified firearm and bow aiming camera input by the presentation interval."},
     {kGrass,51,9,128,1,{3,0},1,"grass-wind","Scaled the verified grass and bush wind phase by the presentation interval."},
     {kScl,51,5,256,3,{0,0},1,"SCL-animation","Scaled the live SCL interface animator by the presentation interval."},

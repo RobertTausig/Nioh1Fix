@@ -78,7 +78,11 @@ motion-component paths. Additional narrowly scoped corrections are required
 for systems that consume per-render values directly:
 
 - Three motion-component delta calls use the measured presentation scale.
-- Normal gameplay camera axes are scaled at RVA `0x00853457`.
+- Normal gameplay camera rotation coefficients are scaled at RVA `0x00853457`.
+  The combined controller and mouse axes in XMM9 and XMM10 remain unscaled
+  because the same values are subsequently compared with the lock-on target-
+  switching threshold. Scaling the coefficients in XMM7 and XMM8 preserves
+  normalized free-camera sensitivity without weakening lock-on input.
 - Firearm and bow aiming-camera axes are scaled at RVA `0x0085E429`.
 - The grass and bush wind phase is scaled at RVA `0x0099105C`.
 - The active seconds-based SCL interface-animation branch is scaled at RVA
