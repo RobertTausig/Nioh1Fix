@@ -3,13 +3,14 @@
 ## Goal and Current State
 
 Nioh1Fix unlocks Nioh: Complete Edition on Linux/Proton and compensates
-Katana Engine gameplay timing dynamically. Version 1.7.0 retains the validated
-1.6.0 timing implementation and no longer exposes the internal 120 FPS startup
-target as user configuration. The implementation has been validated across
-arbitrary framerates and while changing external caps during gameplay. Player
-and ordinary enemy animation, grass and bush wind, the Amrita Gauge pulse,
-water, cloud movement, normal and aiming camera sensitivity, menu navigation,
-firearm input, and directional lock-on target switching are validated.
+Katana Engine gameplay timing dynamically. The current version retains the
+validated timing implementation and no longer exposes the internal 120 FPS
+startup target as user configuration. The implementation has been validated
+across arbitrary framerates and while changing external caps during gameplay.
+Player and ordinary enemy animation, grass and bush wind, the Amrita Gauge
+pulse, water, cloud movement, normal and aiming camera sensitivity, menu
+navigation, firearm input, and directional lock-on target switching are
+validated.
 Horizontal overflow-text scrolling is normalized.
 
 Do not replace the working implementation with an earlier experimental
@@ -182,7 +183,7 @@ act push \
 
 Normal pushes and pull requests build the native Linux tests, run them, and
 cross-build and package the Windows plugin. A pushed `vX.Y.Z` tag must exactly
-match the version in `CMakeLists.txt`; after both build jobs pass, the workflow
+match the version in `VERSION`; after both build jobs pass, the workflow
 creates or updates the corresponding GitHub Release with the tested ZIP.
 
 Windows cross-build:
@@ -208,9 +209,8 @@ Package:
 scripts/package.sh build-windows dist
 ```
 
-`CMakeLists.txt` is the release-version source of truth. The build passes that
-version to the DLL startup log, and both package scripts derive archive names
-from it.
+`VERSION` is the release-version source of truth. CMake passes that version to
+the DLL startup log, and both package scripts use it for archive names.
 
 Install only while the game is stopped:
 
@@ -236,6 +236,7 @@ speed, then inspect `Nioh1Fix.log`.
 - `src/dllmain.cpp`: supported-process validation and DLL entry point only.
 - `tests/frame_profile_tests.cpp`: native tests for profile behavior.
 - `tests/timing_scale_tests.cpp`: native tests for timing-scale behavior.
+- `VERSION`: release-version source of truth.
 - `Nioh1Fix.ini`: runtime enable switch.
 - `docs/research.md`: reverse-engineering record.
 - `scripts/package.sh`: Linux packaging and pinned ASI loader.

@@ -59,8 +59,8 @@ jobs:
       - name: Validate release tag and package
         shell: bash
         run: |
-          version="$(sed -nE 's/^project\(Nioh1Fix VERSION ([0-9.]+) LANGUAGES CXX\)$/\1/p' CMakeLists.txt)"
-          test -n "${version}"
+          version="$(tr -d '\r\n' < VERSION)"
+          [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           test "${GITHUB_REF_NAME}" = "v${version}"
           test -f "dist/Nioh1Fix-${version}.zip"
       - name: Create GitHub release

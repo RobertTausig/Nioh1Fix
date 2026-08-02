@@ -1,6 +1,14 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(Nioh1Fix VERSION 1.7.0 LANGUAGES CXX)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" nioh1fix_version)
+string(STRIP "${nioh1fix_version}" nioh1fix_version)
+if(NOT nioh1fix_version MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+    message(FATAL_ERROR "VERSION must contain a semantic version in X.Y.Z form")
+endif()
+
+project(Nioh1Fix VERSION "${nioh1fix_version}" LANGUAGES CXX)
 
 include(CTest)
 

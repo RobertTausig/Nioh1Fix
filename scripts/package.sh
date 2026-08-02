@@ -6,13 +6,13 @@ readonly output_directory="${2:-dist}"
 readonly loader_version="v9.7.1"
 readonly loader_url="https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases/download/${loader_version}/Ultimate-ASI-Loader_x64.zip"
 readonly loader_sha256="77da5b4c3ab4552b3ba605667961c9a46f1b6c78c80667d572d1e811e9670306"
-readonly version="$(sed -nE 's/^project\(Nioh1Fix VERSION ([0-9.]+) LANGUAGES CXX\)$/\1/p' CMakeLists.txt)"
+readonly version="$(tr -d '\r\n' < VERSION)"
 readonly staging="${output_directory}/Nioh1Fix"
 readonly loader_zip="${output_directory}/Ultimate-ASI-Loader_x64.zip"
 readonly archive="${output_directory}/Nioh1Fix-${version}.zip"
 
-if [[ -z "${version}" ]]; then
-    printf 'Could not read the project version from CMakeLists.txt\n' >&2
+if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    printf 'VERSION must contain a semantic version in X.Y.Z form\n' >&2
     exit 1
 fi
 
