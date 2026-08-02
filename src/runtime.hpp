@@ -1,7 +1,11 @@
 #pragma once
 
 #include "core.hpp"
+#include "diagnostic_types.hpp"
 #include <windows.h>
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
 
 #include <array>
 #include <cstdint>
@@ -9,6 +13,12 @@
 #include <fstream>
 #include <span>
 #include <string>
+
+#ifdef _MSC_VER
+#define NIOH1FIX_RETURN_ADDRESS() _ReturnAddress()
+#else
+#define NIOH1FIX_RETURN_ADDRESS() __builtin_return_address(0)
+#endif
 
 namespace nioh1fix::runtime {
 inline constexpr wchar_t kSupportedExe[] = L"nioh.exe";
@@ -18,6 +28,8 @@ inline constexpr int kInternalTargetFps = 120;
 inline constexpr DWORD kMonitorIntervalMs = 250;
 inline constexpr DWORD kMonitorDurationMs = 120'000;
 inline constexpr DWORD kDiagnosticsIntervalMs = 2'000;
+inline constexpr std::size_t kHookCount = 10;
+inline constexpr std::size_t kTimingCounterCount = 11;
 
 struct PeImage { std::uint8_t* base{}; IMAGE_NT_HEADERS64* headers{}; };
 struct SearchResult { std::uint8_t* address{}; std::size_t count{}; };
@@ -41,20 +53,24 @@ struct HookState { PatchStatus status{}; PatchRecord patch{}; };
 struct HookResources { std::uint8_t* code{}; std::uint8_t* data{}; };
 using InputUpdateFunction = void (*)(void*);
 using TextScrollUpdateFunction = bool (*)(void*);
+using MemoryCopyFunction = void* (*)(void*, const void*, std::size_t);
 struct CompatibilityPlan {
     std::uint8_t* gameplay{}, *limiter{}, *present{}, *table{}, *inputCall{},
         *textScroll{};
     InputUpdateFunction inputTarget{};
     std::array<std::uint8_t*, 3> motionCalls{};
-    std::array<std::uint8_t*, 8> hookBlocks{};
-    volatile LONG* activeProfile{};
-    bool knownBuild{};
+    std::array<std::uint8_t*, kHookCount> hookBlocks{};
+    std::array<std::uint8_t*, 2> matrixCopyCalls{};
+    MemoryCopyFunction memoryCopyTarget{};
+    volatile LONG* activeProfile{}; bool knownBuild{};
 };
 struct PatchSet {
     PatchRecord gameplay{}, limiter{}, present{}, input{}, textScroll{};
+    std::array<PatchRecord, 2> matrixCopies{};
     std::array<PatchRecord, 3> motion{};
-    PatchStatus motionStatus{}, inputStatus{}, textScrollStatus{};
-    std::array<HookState, 8> hooks{};
+    PatchStatus motionStatus{}, inputStatus{}, textScrollStatus{},
+        matrixDiagnosticsStatus{};
+    std::array<HookState, kHookCount> hooks{};
     HookResources resources{};
 };
 struct State {
@@ -68,6 +84,13 @@ struct State {
     volatile LONG presentCalls{}, presentWouldBlock{}, presentFailures{};
     volatile LONG64 presentTicks{}, previousPresentTick{}, lastPresentInterval{};
     volatile LONG motionCalls{}, inputUpdates{}, inputAccepted{}, inputSkipped{};
+    std::array<volatile LONG, 3> motionPathCalls{};
+    std::array<const void*, 3> motionReturnAddresses{};
+    std::array<AccessorCallerSample, kAccessorCallerSlots> accessorCallers{};
+    volatile LONG animationDiagnosticsActive{};
+    volatile LONG accessorCallerOverflow{};
+    std::uint8_t* imageBase{};
+    std::size_t imageSize{};
     LONG64 previousInputTick{};
     double inputAccumulator{};
     InputUpdateFunction originalInputUpdate{};
@@ -95,6 +118,10 @@ bool IsApplied(const PatchRecord& patch);
 
 float ReadTimingScale();
 LONG Counter(std::size_t index);
+void RecordAccessorCaller(const void* returnAddress);
+void RecordMotionCaller(const void* returnAddress);
+void InitializeMotionDiagnostics(const CompatibilityPlan& plan);
+std::string CollectAnimationDiagnostics();
 bool IsThirtyFpsProfile();
 float GetNormalizedMotionDelta();
 void NormalizedInputUpdate(void* manager);

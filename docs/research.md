@@ -71,6 +71,13 @@ interval, it returns `2 * 120` as a startup fallback.
 
 The two 30 FPS profiles bypass dynamic compensation and return 30.
 
+The factor of two is empirical rather than a fully identified engine contract.
+Later visual testing found that some player, cloth, flag, and vegetation motion
+can retain the correct duration while exposing fewer distinct states than the
+presentation rate. The accessor correction therefore remains unchanged until
+per-system cadence diagnostics can distinguish a wrong global divisor from a
+separate fixed-rate simulation or pose-submission stage.
+
 ## Component Timing and Input
 
 The dynamic gameplay divisor corrects the player and the verified shared
@@ -117,6 +124,45 @@ timing are already corrected by the validated gameplay and motion-component
 paths. No additional AI, pathfinding, physics, attack, or invulnerability hook
 is installed.
 
+## Animation Cadence Diagnostics
+
+During the runtime monitor window, each frame-diagnostics line now correlates
+the existing presentation and component counters with additional animation
+signals:
+
+- `motion_path_calls=A/B/C` counts the three validated motion-delta call paths.
+  These are motion-update proxies, not proof that a distinct final skeletal
+  pose was submitted.
+- `cloth_primary_updates` and `cloth_secondary_updates` count the two uniquely
+  identified cloth-manager passes.
+- `fps_accessor_interval_calls` counts calls to the global FPS accessor during
+  the preceding diagnostics interval.
+- `fps_accessor_top_rvas` lists the hottest accessor return-address RVAs and
+  their interval call counts. This identifies which engine callers consume the
+  dynamically doubled presentation rate without hard-coding their addresses.
+- `fps_accessor_overflow` reports whether the fixed caller table was exhausted.
+- `model_matrix_samples`, `model_matrix_changed`, and
+  `model_matrix_repeated` hash the completed 64-byte matrix arrays copied from
+  ordinary `Graphics::CModelObject` instances into per-frame render commands.
+  These aggregate counters are cumulative.
+- The corresponding `cloth_matrix_*` fields cover
+  `Graphics::CClothModelObject`. These sit downstream of the cloth-manager
+  pass counters and distinguish a running simulation that reuses its rendered
+  matrices from one that produces a distinct matrix result.
+- `model_matrix_top_streams` and `cloth_matrix_top_streams` list the busiest
+  source buffers during the preceding diagnostics interval as
+  `slot@matrix_count:samples,changed,repeated`. Slots remain stable for the
+  monitor window, allowing one character or cloth stream to be followed while
+  its visible animation is tested. A stream's first sample establishes its
+  baseline and is therefore neither changed nor repeated.
+- `model_matrix_overflow` and `cloth_matrix_overflow` report exhaustion of the
+  fixed per-category stream tables.
+
+The counters can show whether a visibly stepped system is itself updated less
+often, or instead updates every presented frame while reusing an upstream pose
+or simulation result. Caller tracing automatically stops when the monitor
+finishes so it does not impose continuing per-call overhead.
+
 ## Runtime Patching
 
 SteamStub decrypts code after the ASI starts. Nioh1Fix monitors for 120 seconds
@@ -145,6 +191,8 @@ Relevant RVAs for the supported build:
 - Present dispatch block: `0x002B220C`
 - Original Present sync-interval load: `0x002B2231`
 - Frame controller: `0x019301D0`
+- Cloth-model render-command matrix copy: `0x0099E6B4`
+- Ordinary-model render-command matrix copy: `0x0099E8E4`
 - SCL interface-animation scale: `0x0053370A`
 - Statistical-ocean update: `0x003A3440`
 - Cloud-plane update: `0x003A9150`

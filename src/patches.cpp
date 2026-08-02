@@ -33,6 +33,7 @@ static bool PatchRelative(std::uint8_t* call, const void* destination,
 PatchStatus InstallMotionHooks(const PeImage& image,
                                const CompatibilityPlan& plan, PatchSet& patches) {
     if (!EnsureHookResources(image, patches.resources)) return PatchStatus::unavailable;
+    InitializeMotionDiagnostics(plan);
     for (std::size_t i = 0; i < plan.motionCalls.size(); ++i)
         if (!PatchRelative(plan.motionCalls[i], patches.resources.code,
                            "an animation-delta call", patches.motion[i])) {
