@@ -1,5 +1,4 @@
 #include "runtime.hpp"
-#include "matrix_diagnostics.hpp"
 
 #include <bit>
 #include <cstring>
@@ -54,25 +53,19 @@ bool EnsureHookResources(const PeImage& image, HookResources& resources) {
     const auto input = AbsoluteJump(reinterpret_cast<const void*>(&NormalizedInputUpdate));
     const auto textScroll = AbsoluteJump(
         reinterpret_cast<const void*>(&NormalizedTextScrollUpdate));
-    const auto modelMatrix = AbsoluteJump(
-        reinterpret_cast<const void*>(&DiagnosticModelMatrixCopy));
-    const auto clothMatrix = AbsoluteJump(
-        reinterpret_cast<const void*>(&DiagnosticClothMatrixCopy));
     std::memcpy(code, motion.data(), motion.size());
     std::memcpy(code + 16, input.data(), input.size());
     std::memcpy(code + 32, textScroll.data(), textScroll.size());
-    std::memcpy(code + 48, modelMatrix.data(), modelMatrix.size());
-    std::memcpy(code + 64, clothMatrix.data(), clothMatrix.size());
     auto* values = reinterpret_cast<LONG*>(data);
     values[0] = std::bit_cast<LONG>(ReadTimingScale());
-    for (std::size_t i = 1; i < kTimingCounterCount; ++i) values[i] = 0;
+    for (std::size_t i = 1; i < 9; ++i) values[i] = 0;
     DWORD ignored{};
     if (!VirtualProtect(code, 4096, PAGE_EXECUTE_READ, &ignored)) {
         VirtualFree(code, 0, MEM_RELEASE); VirtualFree(data, 0, MEM_RELEASE);
         resources = {}; Log("Could not make the optional timing relays executable.");
         return false;
     }
-    FlushInstructionCache(GetCurrentProcess(), code, 80);
+    FlushInstructionCache(GetCurrentProcess(), code, 32);
     g.timingData = reinterpret_cast<volatile LONG*>(data);
     return true;
 }

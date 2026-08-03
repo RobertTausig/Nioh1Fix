@@ -1,16 +1,9 @@
 #include "signatures.hpp"
-#include "matrix_diagnostics.hpp"
 
 #include <cstring>
 #include <sstream>
 
 namespace nioh1fix::runtime {
-struct AnimationDiagnosticsLifetime {
-    ~AnimationDiagnosticsLifetime() {
-        InterlockedExchange(&g.animationDiagnosticsActive, 0);
-    }
-};
-
 static bool CheckCorePatch(const PatchRecord& patch, const char* changed) {
     if (IsApplied(patch)) return true;
     Log(changed); return false;
@@ -38,7 +31,7 @@ static bool MaintainOptional(const PeImage& image, const CompatibilityPlan& plan
                                             state, patches.resources);
         else if (state.status == PatchStatus::installed && !IsApplied(state.patch)) {
             Log(std::string("The ") + kHooks[i].name +
-                " hook block changed unexpectedly.");
+                " timing block changed unexpectedly.");
             return false;
         }
     }
@@ -53,12 +46,6 @@ static bool MaintainOptional(const PeImage& image, const CompatibilityPlan& plan
         !IsApplied(patches.textScroll)) {
         Log("The overflow-text scroll update changed unexpectedly."); return false;
     }
-    if (patches.matrixDiagnosticsStatus == PatchStatus::pending)
-        patches.matrixDiagnosticsStatus = InstallMatrixDiagnostics(image, plan, patches);
-    if (patches.matrixDiagnosticsStatus == PatchStatus::installed)
-        for (const auto& patch : patches.matrixCopies) if (!IsApplied(patch)) {
-            Log("A model-matrix diagnostic call changed unexpectedly."); return false;
-        }
     return true;
 }
 static const char* Normalized(PatchStatus status) {
@@ -68,8 +55,6 @@ static void LogSummary(const PatchSet& patches, unsigned reapplyCount) {
     const bool clouds = patches.hooks[5].status == PatchStatus::installed &&
                         patches.hooks[6].status == PatchStatus::installed &&
                         patches.hooks[7].status == PatchStatus::installed;
-    const bool clothDiagnostics = patches.hooks[8].status == PatchStatus::installed &&
-                                  patches.hooks[9].status == PatchStatus::installed;
     std::ostringstream out;
     out << "Runtime monitor completed after " << kMonitorDurationMs
         << " ms; profile state is patched, reapply_count=" << reapplyCount
@@ -85,10 +70,6 @@ static void LogSummary(const PatchSet& patches, unsigned reapplyCount) {
         << ", cloud_animation=" << (clouds ? "normalized" : "baseline")
         << ", camera_input=" << Normalized(patches.hooks[0].status)
         << ", aiming_camera_input=" << Normalized(patches.hooks[1].status)
-        << ", cloth_diagnostics=" << (clothDiagnostics ? "active" : "unavailable")
-        << ", matrix_diagnostics="
-        << (patches.matrixDiagnosticsStatus == PatchStatus::installed ?
-            "active" : "unavailable")
         << ", menu_input="
         << (patches.inputStatus == PatchStatus::installed ? "60_hz_gated" : "baseline")
         << '.';
@@ -96,7 +77,6 @@ static void LogSummary(const PatchSet& patches, unsigned reapplyCount) {
 }
 
 bool Monitor(const PeImage& image) {
-    AnimationDiagnosticsLifetime diagnosticsLifetime;
     PatchSet patches{}; CompatibilityPlan plan{};
     unsigned reapplyCount{}; bool coreInstalled{};
     for (DWORD elapsed = kMonitorIntervalMs; elapsed <= kMonitorDurationMs;
@@ -106,9 +86,6 @@ bool Monitor(const PeImage& image) {
             const auto status = ResolveCompatibility(image, plan);
             if (status == ResolveStatus::pending) continue;
             if (status == ResolveStatus::incompatible) return false;
-            g.imageBase = image.base;
-            g.imageSize = image.headers->OptionalHeader.SizeOfImage;
-            InterlockedExchange(&g.animationDiagnosticsActive, 1);
             g.activeProfile = plan.activeProfile;
             Log(plan.knownBuild ? "Recognized the validated Steam executable."
                                 : "Executable is untested but signature-compatible.");

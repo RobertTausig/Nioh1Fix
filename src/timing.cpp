@@ -1,5 +1,4 @@
 #include "runtime.hpp"
-#include "matrix_diagnostics.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -28,7 +27,6 @@ static void PublishTimingScale(double scale) {
 }
 float GetNormalizedMotionDelta() {
     InterlockedIncrement(&g.motionCalls);
-    RecordMotionCaller(NIOH1FIX_RETURN_ADDRESS());
     return IsThirtyFpsProfile() ? 1.0F / 30.0F : ReadTimingScale() / 120.0F;
 }
 
@@ -110,6 +108,14 @@ HRESULT AggressivePresent(void* renderer, const std::uint8_t* config) {
     return result;
 }
 
+float GetGameplayReferenceFps() {
+    if (IsThirtyFpsProfile()) return 30.0F;
+    const LONG64 ticks = InterlockedCompareExchange64(&g.lastPresentInterval, 0, 0);
+    if (ticks <= 0 || g.frequency.QuadPart <= 0) return kInternalTargetFps * 2.0F;
+    return float(std::clamp(double(g.frequency.QuadPart) / double(ticks) * 2.0,
+                            30.0, 2000.0));
+}
+
 void LogDiagnostics(std::uint8_t* table, DWORD elapsed) {
     const LONG profile = g.activeProfile ? *g.activeProfile : -1;
     std::ostringstream out; out << "Frame diagnostics at " << elapsed
@@ -128,8 +134,6 @@ void LogDiagnostics(std::uint8_t* table, DWORD elapsed) {
         << Counter(4) << ", cloud_plane_updates=" << Counter(5)
         << ", cloud_circle_updates=" << Counter(6) << ", cloud_particle_updates="
         << Counter(7) << ", text_scroll_updates=" << Counter(8)
-        << CollectAnimationDiagnostics()
-        << CollectMatrixDiagnostics()
         << ", input_updates=" << g.inputUpdates
         << ", input_accepted=" << g.inputAccepted << ", input_skipped=" << g.inputSkipped;
     const LONG64 ticks = InterlockedCompareExchange64(&g.lastPresentInterval, 0, 0);

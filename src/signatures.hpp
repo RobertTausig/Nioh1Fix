@@ -77,21 +77,8 @@ inline constexpr auto kCloudParticle = Pattern(
     "488BC4535557415441554881ECD0000000440F2948984533E4F3440F100D????????"
     "488BD9440F2950880F57C08B817C010000440F295C2470440F2964246044"
     "0F28E1440F296C2450440F29742440398180010000761A69816C010000CD0D01");
-inline constexpr auto kClothPrimary = Pattern(
-    "40535657415541564883EC40488B41584533D2488BF10F297424200F28F14889"
-    "8C2488000000418BDA8B38897C2470443951187637");
-inline constexpr auto kClothSecondary = Pattern(
-    "48895C242056574155415641574883EC3033DB0F297424200F28F28BF24C8BF1"
-    "895424608BFB395918763D");
-inline constexpr auto kModelMatrixCopy = Pattern(
-    "488B97F0000000E8A7C67500488B4720488BD74C8B83F000000048F7D8488B"
-    "CB4D1BC9E8ABB8FFFF");
-inline constexpr auto kClothMatrixCopy = Pattern(
-    "488B97F0000000E8D7C87500488B4720488BD74C8B83F000000048F7D8488B"
-    "CB4D1BC9E87BBAFFFF");
-inline constexpr std::size_t kMatrixCopyCallOffset = 7;
 inline constexpr std::array<std::uint8_t, 6> kLimiterPatch{0xC3,0x90,0x90,0x90,0x90,0x90};
-inline constexpr std::array<HookSpec, kHookCount> kHooks{{
+inline constexpr std::array<HookSpec, 8> kHooks{{
     {kCamera,44,10,64,-1,{7,8},2,"camera","Scaled the verified gameplay camera rotation response while preserving raw lock-on selection input."},
     {kAim,32,8,192,2,{3,4},2,"aiming-camera","Scaled the verified firearm and bow aiming camera input by the presentation interval."},
     {kGrass,51,9,128,1,{3,0},1,"grass-wind","Scaled the verified grass and bush wind phase by the presentation interval."},
@@ -99,8 +86,6 @@ inline constexpr std::array<HookSpec, kHookCount> kHooks{{
     {kOcean,0,5,320,4,{1,0},1,"statistical-ocean","Scaled the verified statistical-ocean animation update by the presentation interval."},
     {kCloudPlane,0,9,384,5,{1,0},1,"cloud-plane","Scaled the verified cloud-plane animation update by the presentation interval."},
     {kCloudCircle,0,7,448,6,{1,0},1,"cloud-circle","Scaled the verified cloud-circle animation update by the presentation interval."},
-    {kCloudParticle,0,5,512,7,{1,0},1,"cloud-particle","Scaled the verified cloud-particle animation update by the presentation interval."},
-    {kClothPrimary,0,6,640,9,{0,0},0,"cloth-primary-diagnostics","Instrumented the primary cloth simulation pass."},
-    {kClothSecondary,0,5,704,10,{0,0},0,"cloth-secondary-diagnostics","Instrumented the secondary cloth simulation pass."}
+    {kCloudParticle,0,5,512,7,{1,0},1,"cloud-particle","Scaled the verified cloud-particle animation update by the presentation interval."}
 }};
 } // namespace nioh1fix::runtime
