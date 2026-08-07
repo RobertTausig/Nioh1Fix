@@ -1,8 +1,8 @@
 /build/
 /build-windows/
 /dist/
+/docs/issues/
 .cache/
-*.log
 *.zip
 __pycache__/
 *.pyc
