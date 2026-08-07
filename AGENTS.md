@@ -27,8 +27,7 @@ approach without new evidence.
 - Before installing a build, confirm that no Nioh process is running.
 - Keep operations conservative. Previous overly broad operations caused editor
   instability.
-- For GitHub issue work, read `docs/issue-investigation.md` first. Store issue
-  briefs and evidence under `docs/issues/` using issue 1 as the template.
+- For GitHub issue work, read `docs/issue-investigation.md`.
 
 ## Paths
 
