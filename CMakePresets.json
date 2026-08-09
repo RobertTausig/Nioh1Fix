@@ -1,9 +1,9 @@
 {
-  "version": 6,
+  "version": 12,
   "cmakeMinimumRequired": {
     "major": 4,
     "minor": 4,
-    "patch": 2
+    "patch": 0
   },
   "configurePresets": [
     {
@@ -17,7 +17,7 @@
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "CMAKE_CXX_COMPILER": "clang++",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "NIOH1FIX_REQUIRE_PINNED_CLANG": "ON"
+        "NIOH1FIX_REQUIRE_CLANG_MAJOR": "ON"
       }
     },
     {
@@ -32,7 +32,7 @@
         "CMAKE_CXX_COMPILER": "x86_64-w64-mingw32-clang++",
         "CMAKE_SYSTEM_NAME": "Windows",
         "CMAKE_SYSTEM_PROCESSOR": "x86_64",
-        "NIOH1FIX_REQUIRE_PINNED_CLANG": "ON"
+        "NIOH1FIX_REQUIRE_CLANG_MAJOR": "ON"
       }
     }
   ],

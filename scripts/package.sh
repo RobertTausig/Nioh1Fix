@@ -3,9 +3,9 @@ set -euo pipefail
 
 readonly build_directory="${1:-build-windows}"
 readonly output_directory="${2:-dist}"
-readonly loader_version="v9.7.1"
+readonly loader_version="v9.7.2"
 readonly loader_url="https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases/download/${loader_version}/Ultimate-ASI-Loader_x64.zip"
-readonly loader_sha256="77da5b4c3ab4552b3ba605667961c9a46f1b6c78c80667d572d1e811e9670306"
+readonly loader_sha256="1c1f9ebf3996df4a4bcf9be0785b9de8f934ef6497f73145602488fc7d8c2909"
 readonly version="$(tr -d '\r\n' < VERSION)"
 readonly staging="${output_directory}/Nioh1Fix"
 readonly loader_zip="${output_directory}/Ultimate-ASI-Loader_x64.zip"

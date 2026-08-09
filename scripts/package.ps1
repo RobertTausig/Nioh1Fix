@@ -4,9 +4,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$loaderVersion = "v9.7.1"
+$loaderVersion = "v9.7.2"
 $loaderUrl = "https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases/download/$loaderVersion/Ultimate-ASI-Loader_x64.zip"
-$loaderSha256 = "77da5b4c3ab4552b3ba605667961c9a46f1b6c78c80667d572d1e811e9670306"
+$loaderSha256 = "1c1f9ebf3996df4a4bcf9be0785b9de8f934ef6497f73145602488fc7d8c2909"
 $version = (Get-Content "VERSION" -Raw).Trim()
 if ($version -notmatch '^\d+\.\d+\.\d+$') {
     throw "VERSION must contain a semantic version in X.Y.Z form"

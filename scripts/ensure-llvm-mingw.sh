@@ -6,7 +6,7 @@ readonly versions_file="${script_directory}/../cmake/toolchain-versions.env"
 # shellcheck disable=SC1090
 source "${versions_file}"
 readonly toolchain_release="${NIOH1FIX_LLVM_MINGW_RELEASE}"
-readonly clang_version="${NIOH1FIX_CLANG_VERSION}"
+readonly clang_major="${NIOH1FIX_CLANG_MAJOR}"
 readonly toolchain_archive="llvm-mingw-${toolchain_release}-ucrt-ubuntu-22.04-x86_64.tar.xz"
 readonly toolchain_url="https://github.com/mstorsjo/llvm-mingw/releases/download/${toolchain_release}/${toolchain_archive}"
 readonly toolchain_sha256="${NIOH1FIX_LLVM_MINGW_SHA256}"
@@ -40,9 +40,10 @@ fi
 
 actual_version="$("${native_clang}" --version |
     awk '/^clang version/ { print $3; exit }')"
-if [[ "${actual_version}" != "${clang_version}" ]]; then
-    printf 'Expected Clang %s, found %s\n' \
-        "${clang_version}" "${actual_version}" >&2
+actual_major="${actual_version%%.*}"
+if [[ "${actual_major}" != "${clang_major}" ]]; then
+    printf 'Expected Clang major %s, found %s\n' \
+        "${clang_major}" "${actual_version}" >&2
     exit 1
 fi
 
