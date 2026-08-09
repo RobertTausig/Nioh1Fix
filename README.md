@@ -10,12 +10,13 @@ It corrects the framerate-dependent behavior of:
 - normal and aiming camera sensitivity, including directional lock-on target
   switching;
 - menu navigation and horizontally scrolling menu text;
-- firearm input.
+- gameplay input timing, including firearm input and distinction
+  between short-press evasion and hold-to-run.
 
 
 The mod has been tested with the Steam 1.24.8.0 executable.
 
-This mod is developed and used by me on Linux, so the Windows version is untested as of version `1.7.0`.
+This mod is developed and used by me on Linux, so the Windows version is untested as of version `1.8.0`.
 
 ## Installation and use
 
@@ -57,7 +58,7 @@ Arbitrary framerates are supported. I tested up until 135 Hz, but that is just b
 
 ### Can I also use the mod for framerates _under_ 60 Hz?
 
-Yes. In the game's normal 60 FPS mode, unmodded Nioh's timing-dependent animation and gameplay speed varies with the actual frame rate, causing it to run too slowly below 60 Hz. Nioh1Fix compensates for that difference.
+Yes. In unmodded Nioh's 60 FPS mode - if your framerates were under 60 Hz - timing-dependent animation and gameplay speed ran too slowly. Nioh1Fix compensates for that difference.
 You could lock your framerate to e.g. 46 Hz and everything will work as expected.
 
 ### Why do I need to use an external framerate limiter?
