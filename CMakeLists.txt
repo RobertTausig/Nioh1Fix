@@ -37,6 +37,7 @@ target_compile_features(nioh1fix_core INTERFACE cxx_std_20)
 
 if(WIN32)
     add_library(Nioh1Fix SHARED
+        src/action_input.cpp
         src/compatibility.cpp
         src/dllmain.cpp
         src/hooks.cpp
@@ -79,4 +80,8 @@ if(BUILD_TESTING)
     add_executable(timing_scale_tests tests/timing_scale_tests.cpp)
     target_link_libraries(timing_scale_tests PRIVATE nioh1fix_core)
     add_test(NAME timing_scale_tests COMMAND timing_scale_tests)
+
+    add_executable(input_timing_tests tests/input_timing_tests.cpp)
+    target_link_libraries(input_timing_tests PRIVATE nioh1fix_core)
+    add_test(NAME input_timing_tests COMMAND input_timing_tests)
 endif()

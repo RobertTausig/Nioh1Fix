@@ -41,8 +41,8 @@ Three independent changes are required:
    `DXGI_PRESENT_DO_NOT_WAIT`.
 
 The post-Present limiter at RVA `0x00A9C2D0` was the final effective 60 FPS
-cap. Once disabled, the game reached an external MangoHud cap of 130 FPS in
-menus and gameplay.
+cap. Once disabled, the game followed higher external caps in menus and
+gameplay.
 
 ## Dynamic Gameplay Timing
 
@@ -52,7 +52,8 @@ roughly 190 static call sites in the supported executable.
 
 Experiments established the direction of the dependency:
 
-- Returning 120 while presenting at 130 left gameplay somewhat too fast.
+- Returning the fixed internal target while presenting above it left gameplay
+  somewhat too fast.
 - Returning the stock value 60 made gameplay approximately twice as fast.
 - Returning the measured presentation FPS improved timing.
 - Returning twice the measured presentation FPS produced stable wall-clock
@@ -108,7 +109,9 @@ samples. Transient and repeat masks are cleared on skipped invocations. This
 preserves firearm trigger handling while preventing one D-pad press from
 producing several menu transitions. Calling the original update on every
 invocation advanced internal repeat state too frequently and regressed menu
-navigation.
+navigation. A later candidate handed a confirmed raw evade/run press off once
+at the gameplay input-module boundary, but did not materially improve evasion
+reliability and was removed.
 
 Testing initially suggested that enemy movement needed another pathfinding
 hook. Those observations came from passive tutorial enemies. Normal aggressive
@@ -151,6 +154,9 @@ Relevant RVAs for the supported build:
 - Cloud-circle update: `0x003ABAB0`
 - Cloud-particle update: `0x003AF180`
 - Overflow-text controller update: `0x0056C1B0`
+- Shared gameplay-action timer update: `0x0071D670`
+- Push-button action-rate update: `0x00730200`
+- Per-action consecutive-held counters: `0x00750220`
 
 RVAs and PE metadata are documentation and diagnostics. Runtime writes use the
 fully validated compatibility plan derived from relocation-aware signatures.
@@ -176,6 +182,41 @@ fully validated compatibility plan derived from relocation-aware signatures.
 - Scaling the inactive fixed-step SCL loop at RVA `0x005334F9` did not affect
   overflow text; runtime diagnostics showed that loop was not entered. The
   dedicated text-scroll controller was identified and used instead.
+- Gating the complete input-update and action-mapping pipeline at 60 Hz caused
+  missed attacks and unreliable menus, while forward evade remained unreliable
+  across framerate changes. The original inner sampler gate was restored.
+- A diagnostic detour at the raw-to-action mapper crashed during startup. Its
+  trampoline's absolute continuation jump clobbered `RAX`, which the mapper
+  prologue uses to retain its entry stack pointer. The hook was removed.
+- A later direct-call diagnostic at the gameplay input snapshot crashed while
+  loading gameplay. It was removed along with all temporary input diagnostics.
+
+## Gameplay Action Timing Investigation
+
+The gameplay `CActModuleInputBase` path is separate from menu input. Its shared
+update at RVA `0x0071D670` decrements multiple action timers by a fixed layout
+frame and supplies that same fixed delta to eight embedded frame-rate
+controllers. `CPushButtonFRateController` at RVA `0x00730200` also advances its
+rise and fall state by fixed per-update increments. These are the downstream
+hold-duration mechanisms used for gameplay action classification; unlike the
+raw sampler, they can be normalized without suppressing physical button edges.
+
+A combined experiment scaled both the shared action-frame delta and the
+push-button rise/fall increments. Forward evade remained unreliable across
+framerates, so that experiment was removed. The aggregate action-update counter
+covers multiple modules and cannot distinguish the player instance.
+A second candidate scaled only the shared countdown delta and left the
+persistent push-button rise/fall state untouched. Forward evade then failed on
+every attempt. Both action-timing experiments were removed.
+
+Static tracing of the player controller identified the evade/run classifier's
+actual held channel as gameplay action index 3. It reads the consecutive-held
+counter at RVA `0x00732BB0` and compares the result against 2 and 30 layout
+frames. The shared counter update at RVA `0x00750220` advances all 56 gameplay
+action counters on every gameplay-module invocation, independently of the
+physical-input sampler. The validated correction preserves every action edge
+but caps only continued held-counter advancement at the original 60 Hz
+cadence.
 
 ## Validation
 
@@ -189,6 +230,8 @@ Validated on Linux with Proton:
 - Reliable directional lock-on target switching across arbitrary framerates.
 - One menu step per D-pad press, normal hold-to-repeat behavior, and working
   firearm input.
+- Reliable short-press evasion across arbitrary framerates, with intentional
+  hold-to-run behavior and no observed input regressions.
 - Stable horizontal overflow-text speed while changing external caps; the
   Amrita Gauge pulse remained correct in the same build.
 - Clean startup after the final accessor-based implementation.

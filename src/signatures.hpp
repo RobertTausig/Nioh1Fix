@@ -41,6 +41,11 @@ inline constexpr auto kMotionComponent = Pattern(
 inline constexpr auto kInput = Pattern(
     "4883EC28488B0D????????4885C97415E8????????488B0D????????4883C4"
     "28E9????????4883C428C3");
+inline constexpr auto kActionCounters = Pattern(
+    "4881C18400000041B9040000000F1F00F6C201741241F6C001750433C0EB03"
+    "8B41FCFFC08941FC48D1EA49D1E8F6C201741041F6C001750433C0EB028B01"
+    "FFC0890148D1EA49D1E8");
+inline constexpr std::size_t kActionCountersOverwriteSize = 16;
 inline constexpr auto kCamera = Pattern(
     "488B0D????????F3440F103D????????4439A1AC0000007505F3410F59FF44"
     "39A1B00000007505F3450F59C7F3450F58D3F3450F58CC8B81B40000000F57C0");

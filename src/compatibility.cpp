@@ -2,11 +2,11 @@
 
 namespace nioh1fix::runtime {
 ResolveStatus ResolveCompatibility(const PeImage& image, CompatibilityPlan& plan) {
-    std::array<SearchResult, 7> coreMatches{
+    std::array<SearchResult, 8> coreMatches{
         FindCode(image, kGameplay), FindCode(image, kLimiter),
         FindCode(image, kPresent), FindCode(image, kMotionSlots),
         FindCode(image, kLinkedMotion), FindCode(image, kMotionComponent),
-        FindCode(image, kInput)};
+        FindCode(image, kInput), FindCode(image, kActionCounters)};
     std::array<SearchResult, kHooks.size()> hookMatches{};
     for (std::size_t i = 0; i < kHooks.size(); ++i)
         hookMatches[i] = FindCode(image, kHooks[i].signature);
@@ -75,12 +75,18 @@ ResolveStatus ResolveCompatibility(const PeImage& image, CompatibilityPlan& plan
         Log("The text-scroll hook was outside executable code; no changes were made.");
         return ResolveStatus::incompatible;
     }
+    if (!IsImageRange(image, coreMatches[7].address,
+                      kActionCountersOverwriteSize, IMAGE_SCN_MEM_EXECUTE)) {
+        Log("The held-action counter update was outside executable code; no changes were made.");
+        return ResolveStatus::incompatible;
+    }
 
     plan.gameplay = coreMatches[0].address;
     plan.limiter = coreMatches[1].address;
     plan.present = coreMatches[2].address;
     plan.table = table;
     plan.textScroll = textScrollMatch.address;
+    plan.actionCounters = coreMatches[7].address;
     plan.activeProfile = reinterpret_cast<volatile LONG*>(active);
     plan.inputTarget = reinterpret_cast<InputUpdateFunction>(inputTarget);
     plan.knownBuild = image.headers->FileHeader.TimeDateStamp == kSupportedTimestamp &&

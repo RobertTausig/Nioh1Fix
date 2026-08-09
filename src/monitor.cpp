@@ -40,6 +40,13 @@ static bool MaintainOptional(const PeImage& image, const CompatibilityPlan& plan
     if (patches.inputStatus == PatchStatus::installed && !IsApplied(patches.input)) {
         Log("The input cadence call changed unexpectedly."); return false;
     }
+    if (patches.actionCounterStatus == PatchStatus::pending)
+        patches.actionCounterStatus = InstallActionCounterHook(image, plan, patches);
+    if (patches.actionCounterStatus == PatchStatus::installed &&
+        !IsApplied(patches.actionCounters)) {
+        Log("The gameplay held-action counter update changed unexpectedly.");
+        return false;
+    }
     if (patches.textScrollStatus == PatchStatus::pending)
         patches.textScrollStatus = InstallTextScrollHook(image, plan, patches);
     if (patches.textScrollStatus == PatchStatus::installed &&
@@ -72,6 +79,7 @@ static void LogSummary(const PatchSet& patches, unsigned reapplyCount) {
         << ", aiming_camera_input=" << Normalized(patches.hooks[1].status)
         << ", menu_input="
         << (patches.inputStatus == PatchStatus::installed ? "60_hz_gated" : "baseline")
+        << ", gameplay_action_holds=" << Normalized(patches.actionCounterStatus)
         << '.';
     Log(out.str());
 }

@@ -43,7 +43,7 @@ using InputUpdateFunction = void (*)(void*);
 using TextScrollUpdateFunction = bool (*)(void*);
 struct CompatibilityPlan {
     std::uint8_t* gameplay{}, *limiter{}, *present{}, *table{}, *inputCall{},
-        *textScroll{};
+        *textScroll{}, *actionCounters{};
     InputUpdateFunction inputTarget{};
     std::array<std::uint8_t*, 3> motionCalls{};
     std::array<std::uint8_t*, 8> hookBlocks{};
@@ -51,9 +51,11 @@ struct CompatibilityPlan {
     bool knownBuild{};
 };
 struct PatchSet {
-    PatchRecord gameplay{}, limiter{}, present{}, input{}, textScroll{};
+    PatchRecord gameplay{}, limiter{}, present{}, input{}, textScroll{},
+        actionCounters{};
     std::array<PatchRecord, 3> motion{};
-    PatchStatus motionStatus{}, inputStatus{}, textScrollStatus{};
+    PatchStatus motionStatus{}, inputStatus{}, textScrollStatus{},
+        actionCounterStatus{};
     std::array<HookState, 8> hooks{};
     HookResources resources{};
 };
@@ -111,6 +113,8 @@ PatchStatus InstallMotionHooks(const PeImage& image,
                                const CompatibilityPlan& plan, PatchSet& patches);
 PatchStatus InstallInputHook(const PeImage& image,
                              const CompatibilityPlan& plan, PatchSet& patches);
+PatchStatus InstallActionCounterHook(const PeImage& image,
+    const CompatibilityPlan& plan, PatchSet& patches);
 PatchStatus InstallTextScrollHook(const PeImage& image,
     const CompatibilityPlan& plan, PatchSet& patches);
 bool ValidateInputTarget(const PeImage& image, std::uint8_t* target);
