@@ -1,5 +1,8 @@
 /build/
+/build-clang/
 /build-windows/
+/build-windows-clang/
+/CMakeUserPresets.json
 /dist/
 /docs/issues/
 .cache/

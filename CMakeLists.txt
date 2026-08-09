@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 4.4.2)
 
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
@@ -9,6 +9,28 @@ if(NOT nioh1fix_version MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
 endif()
 
 project(Nioh1Fix VERSION "${nioh1fix_version}" LANGUAGES CXX)
+
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/toolchain-versions.env"
+    nioh1fix_toolchain_version_lines REGEX "^NIOH1FIX_CLANG_VERSION=")
+list(LENGTH nioh1fix_toolchain_version_lines nioh1fix_clang_version_line_count)
+if(NOT nioh1fix_clang_version_line_count EQUAL 1)
+    message(FATAL_ERROR
+        "cmake/toolchain-versions.env must define NIOH1FIX_CLANG_VERSION once")
+endif()
+list(GET nioh1fix_toolchain_version_lines 0 nioh1fix_clang_version_line)
+string(REPLACE "NIOH1FIX_CLANG_VERSION=" "" nioh1fix_clang_version
+    "${nioh1fix_clang_version_line}")
+
+option(NIOH1FIX_REQUIRE_PINNED_CLANG
+    "Require the Clang version from the toolchain manifest" OFF)
+if(NIOH1FIX_REQUIRE_PINNED_CLANG AND
+   (NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR
+    NOT CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL
+        "${nioh1fix_clang_version}"))
+    message(FATAL_ERROR
+        "This preset requires Clang ${nioh1fix_clang_version}; "
+        "CMake detected ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
+endif()
 
 include(CTest)
 

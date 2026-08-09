@@ -50,6 +50,29 @@ To uninstall, remove `Nioh1Fix.asi`, `Nioh1Fix.ini`, and `Nioh1Fix.log`.
 Remove `version.dll` and the Proton launch option only if no other mod uses
 that ASI loader.
 
+## Development builds
+
+The native tests and Windows plugin use the same verified LLVM-MinGW release.
+The versions and checksums for Clang, LLVM-MinGW, and CMake are maintained
+together in `cmake/toolchain-versions.env`. The build scripts use the pinned
+CMake release instead of the host distribution's version.
+
+On Linux, prepare the pinned toolchain and run the native tests with:
+
+```bash
+toolchain_directory="$(scripts/ensure-llvm-mingw.sh)"
+export PATH="${toolchain_directory}/bin:${PATH}"
+scripts/cmake.sh --preset linux-clang
+scripts/cmake.sh --build --preset linux-clang
+scripts/ctest.sh --preset linux-clang
+```
+
+The Windows cross-build and package command is:
+
+```bash
+scripts/build-linux.sh
+```
+
 ## FAQ
 
 ### Which framerates are supported? Nioh 2 & 3 have a framerate lock of 120 Hz on PC.

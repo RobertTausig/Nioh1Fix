@@ -10,32 +10,36 @@ permissions:
 
 jobs:
   linux-build-and-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes cmake g++
+          sudo apt-get install --yes curl ninja-build xz-utils
+      - name: Install pinned LLVM-MinGW Clang
+        run: |
+          toolchain_directory="$(scripts/ensure-llvm-mingw.sh)"
+          echo "${toolchain_directory}/bin" >> "${GITHUB_PATH}"
       - name: Configure Linux build
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: scripts/cmake.sh --preset linux-clang
       - name: Build Linux test executables
-        run: cmake --build build --parallel
+        run: scripts/cmake.sh --build --preset linux-clang
       - name: Run tests
-        run: ctest --test-dir build --output-on-failure
+        run: scripts/ctest.sh --preset linux-clang
 
   windows-build-and-package:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install packaging dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes cmake curl xz-utils unzip zip
+          sudo apt-get install --yes curl xz-utils unzip zip
       - name: Cross-build Windows plugin and create package
         run: scripts/build-linux.sh
       - name: Upload Windows release package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Nioh1Fix
           path: dist/Nioh1Fix-*.zip
@@ -46,13 +50,13 @@ jobs:
     needs:
       - linux-build-and-tests
       - windows-build-and-package
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Download tested package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: Nioh1Fix
           path: dist
