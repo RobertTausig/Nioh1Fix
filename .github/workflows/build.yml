@@ -65,16 +65,42 @@ jobs:
         run: |
           version="$(tr -d '\r\n' < VERSION)"
           [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          test "${GITHUB_REF_NAME}" = "v${version}"
+          tag="${GITHUB_REF_NAME}"
+          prerelease=false
+          if [[ "${tag}" = "v${version}" ]]; then
+            :
+          elif [[ "${tag}" = "v${version}-"* ]]; then
+            suffix="${tag#v${version}-}"
+            [[ "${suffix}" =~ ^[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*$ ]]
+            prerelease=true
+          else
+            printf 'Expected tag v%s or a prerelease tag based on it; found %s\n' \
+              "${version}" "${tag}" >&2
+            exit 1
+          fi
           test -f "dist/Nioh1Fix-${version}.zip"
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
+          version="$(tr -d '\r\n' < VERSION)"
+          tag="${GITHUB_REF_NAME}"
+          prerelease=false
+          if [[ "${tag}" != "v${version}" ]]; then
+            prerelease=true
+          fi
           if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
             gh release upload "${GITHUB_REF_NAME}" dist/Nioh1Fix-*.zip --clobber
+            if [[ "${prerelease}" = true ]]; then
+              gh release edit "${GITHUB_REF_NAME}" --prerelease
+            fi
           else
+            release_options=(--verify-tag --generate-notes
+              --title "Nioh1Fix ${GITHUB_REF_NAME}")
+            if [[ "${prerelease}" = true ]]; then
+              release_options+=(--prerelease)
+            fi
             gh release create "${GITHUB_REF_NAME}" dist/Nioh1Fix-*.zip \
-              --verify-tag --generate-notes --title "Nioh1Fix ${GITHUB_REF_NAME}"
+              "${release_options[@]}"
           fi
