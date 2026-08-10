@@ -14,9 +14,14 @@ It corrects the framerate-dependent behavior of:
   between short-press evasion and hold-to-run.
 
 
-The mod has been tested with the Steam 1.24.8.0 executable.
+The mod has been tested with the Steam 1.24.8.0 executable. This mod is developed and used by me on Linux.
 
-This mod is developed and used by me on Linux, so the Windows version is untested as of version `1.8.0`.
+> [!WARNING]
+> **Windows build status:** User feedback has confirmed that the Windows build
+> is not yet ready for use. Although the framerate unlock works, animations
+> currently play too quickly. For now, development will focus on the
+> Linux/Proton version. A fully working Windows version is planned for release
+> `2.0.0`.
 
 ## Installation and use
 
