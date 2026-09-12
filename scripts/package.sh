@@ -6,9 +6,9 @@ readonly output_directory="${2:-dist}"
 readonly loader_version="v9.7.1"
 readonly loader_url="https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases/download/${loader_version}/Ultimate-ASI-Loader_x64.zip"
 readonly loader_sha256="77da5b4c3ab4552b3ba605667961c9a46f1b6c78c80667d572d1e811e9670306"
+readonly bundled_loader_zip="third_party/archives/Ultimate-ASI-Loader_x64-${loader_version}.zip"
 readonly version="$(tr -d '\r\n' < VERSION)"
 readonly staging="${output_directory}/Nioh1Fix"
-readonly loader_zip="${output_directory}/Ultimate-ASI-Loader_x64.zip"
 readonly archive="${output_directory}/Nioh1Fix-${version}.zip"
 
 if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -25,7 +25,14 @@ rm -rf "${staging}"
 mkdir -p "${staging}"
 cp "${build_directory}/Nioh1Fix.asi" Nioh1Fix.ini README.md LICENSE THIRD_PARTY.md "${staging}/"
 
-curl -fL --retry 2 "${loader_url}" -o "${loader_zip}"
+loader_zip="${output_directory}/Ultimate-ASI-Loader_x64.zip"
+if [[ -f "${bundled_loader_zip}" ]]; then
+    loader_zip="${bundled_loader_zip}"
+else
+    curl -fL --proto '=https' --tlsv1.2 --retry 2 \
+        "${loader_url}" -o "${loader_zip}"
+fi
+readonly loader_zip
 printf '%s  %s\n' "${loader_sha256}" "${loader_zip}" | sha256sum --check
 unzip -q -o "${loader_zip}" -d "${staging}"
 mv "${staging}/dinput8.dll" "${staging}/version.dll"

@@ -1,0 +1,3 @@
+third_party/archives/*.gz binary
+third_party/archives/*.xz binary
+third_party/archives/*.zip binary

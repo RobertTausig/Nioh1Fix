@@ -10,32 +10,36 @@ permissions:
 
 jobs:
   linux-build-and-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes cmake g++
+          sudo apt-get install --yes curl ninja-build xz-utils
+      - name: Install pinned LLVM-MinGW Clang
+        run: |
+          toolchain_directory="$(scripts/ensure-llvm-mingw.sh)"
+          echo "${toolchain_directory}/bin" >> "${GITHUB_PATH}"
       - name: Configure Linux build
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: scripts/cmake.sh --preset linux-clang
       - name: Build Linux test executables
-        run: cmake --build build --parallel
+        run: scripts/cmake.sh --build --preset linux-clang
       - name: Run tests
-        run: ctest --test-dir build --output-on-failure
+        run: scripts/ctest.sh --preset linux-clang
 
   windows-build-and-package:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install packaging dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes cmake curl xz-utils unzip zip
+          sudo apt-get install --yes curl ninja-build xz-utils unzip zip
       - name: Cross-build Windows plugin and create package
         run: scripts/build-linux.sh
       - name: Upload Windows release package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Nioh1Fix
           path: dist/Nioh1Fix-*.zip
@@ -46,13 +50,13 @@ jobs:
     needs:
       - linux-build-and-tests
       - windows-build-and-package
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Download tested package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: Nioh1Fix
           path: dist
@@ -61,16 +65,42 @@ jobs:
         run: |
           version="$(tr -d '\r\n' < VERSION)"
           [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          test "${GITHUB_REF_NAME}" = "v${version}"
+          tag="${GITHUB_REF_NAME}"
+          prerelease=false
+          if [[ "${tag}" = "v${version}" ]]; then
+            :
+          elif [[ "${tag}" = "v${version}-"* ]]; then
+            suffix="${tag#v${version}-}"
+            [[ "${suffix}" =~ ^[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*$ ]]
+            prerelease=true
+          else
+            printf 'Expected tag v%s or a prerelease tag based on it; found %s\n' \
+              "${version}" "${tag}" >&2
+            exit 1
+          fi
           test -f "dist/Nioh1Fix-${version}.zip"
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
+          version="$(tr -d '\r\n' < VERSION)"
+          tag="${GITHUB_REF_NAME}"
+          prerelease=false
+          if [[ "${tag}" != "v${version}" ]]; then
+            prerelease=true
+          fi
           if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
             gh release upload "${GITHUB_REF_NAME}" dist/Nioh1Fix-*.zip --clobber
+            if [[ "${prerelease}" = true ]]; then
+              gh release edit "${GITHUB_REF_NAME}" --prerelease
+            fi
           else
+            release_options=(--verify-tag --generate-notes
+              --title "Nioh1Fix ${GITHUB_REF_NAME}")
+            if [[ "${prerelease}" = true ]]; then
+              release_options+=(--prerelease)
+            fi
             gh release create "${GITHUB_REF_NAME}" dist/Nioh1Fix-*.zip \
-              --verify-tag --generate-notes --title "Nioh1Fix ${GITHUB_REF_NAME}"
+              "${release_options[@]}"
           fi
