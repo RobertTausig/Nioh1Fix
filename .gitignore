@@ -7,5 +7,6 @@
 /docs/issues/
 .cache/
 *.zip
+!/third_party/archives/*.zip
 __pycache__/
 *.pyc

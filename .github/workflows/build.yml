@@ -35,7 +35,7 @@ jobs:
       - name: Install packaging dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes curl xz-utils unzip zip
+          sudo apt-get install --yes curl ninja-build xz-utils unzip zip
       - name: Cross-build Windows plugin and create package
         run: scripts/build-linux.sh
       - name: Upload Windows release package

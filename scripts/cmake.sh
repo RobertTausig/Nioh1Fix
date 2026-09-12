@@ -11,15 +11,19 @@ readonly cmake_version_family="${cmake_release%.*}"
 readonly cmake_archive="cmake-${cmake_release}-linux-x86_64.tar.gz"
 readonly cmake_url="https://github.com/Kitware/CMake/releases/download/v${cmake_release}/${cmake_archive}"
 readonly cmake_sha256="${NIOH1FIX_CMAKE_SHA256}"
+readonly bundled_archive_path="${script_directory}/../third_party/archives/${cmake_archive}"
 readonly cmake_directory="${cache_directory}/cmake-${cmake_release}"
-readonly cmake_archive_path="${cache_directory}/${cmake_archive}"
 readonly cmake_binary="${cmake_directory}/bin/cmake"
 
 mkdir -p "${cache_directory}"
-if [[ ! -f "${cmake_archive_path}" ]]; then
+cmake_archive_path="${cache_directory}/${cmake_archive}"
+if [[ -f "${bundled_archive_path}" ]]; then
+    cmake_archive_path="${bundled_archive_path}"
+elif [[ ! -f "${cmake_archive_path}" ]]; then
     curl -fL --proto '=https' --tlsv1.2 --retry 2 \
         "${cmake_url}" -o "${cmake_archive_path}"
 fi
+readonly cmake_archive_path
 printf '%s  %s\n' "${cmake_sha256}" "${cmake_archive_path}" |
     sha256sum --check --status
 

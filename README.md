@@ -54,9 +54,10 @@ that ASI loader.
 
 The native tests and Windows plugin use the same verified LLVM-MinGW release.
 The versions and checksums for Clang, LLVM-MinGW, and CMake are maintained
-together in `cmake/toolchain-versions.env`. The build scripts use the current
-CMake release in the configured 4.4 release line instead of the host
-distribution's version.
+together in `cmake/toolchain-versions.env`. Unmodified copies of the pinned
+toolchain and ASI loader archives are retained in `third_party/archives`. The
+build scripts prefer those copies, verify every archive before use, and retain
+the upstream download URLs as fallbacks.
 
 On Linux, prepare the pinned toolchain and run the native tests with:
 

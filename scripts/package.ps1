@@ -7,6 +7,7 @@ $ErrorActionPreference = "Stop"
 $loaderVersion = "v9.7.1"
 $loaderUrl = "https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases/download/$loaderVersion/Ultimate-ASI-Loader_x64.zip"
 $loaderSha256 = "77da5b4c3ab4552b3ba605667961c9a46f1b6c78c80667d572d1e811e9670306"
+$bundledLoaderZip = Join-Path $PSScriptRoot "../third_party/archives/Ultimate-ASI-Loader_x64-$loaderVersion.zip"
 $version = (Get-Content "VERSION" -Raw).Trim()
 if ($version -notmatch '^\d+\.\d+\.\d+$') {
     throw "VERSION must contain a semantic version in X.Y.Z form"
@@ -31,7 +32,11 @@ Copy-Item "README.md" $staging
 Copy-Item "LICENSE" $staging
 Copy-Item "THIRD_PARTY.md" $staging
 
-Invoke-WebRequest $loaderUrl -OutFile $loaderZip
+if (Test-Path $bundledLoaderZip) {
+    $loaderZip = $bundledLoaderZip
+} else {
+    Invoke-WebRequest $loaderUrl -OutFile $loaderZip
+}
 if ((Get-FileHash $loaderZip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $loaderSha256) {
     throw "Ultimate ASI Loader archive checksum mismatch"
 }

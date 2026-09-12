@@ -11,16 +11,20 @@ readonly toolchain_archive="llvm-mingw-${toolchain_release}-ucrt-ubuntu-22.04-x8
 readonly toolchain_url="https://github.com/mstorsjo/llvm-mingw/releases/download/${toolchain_release}/${toolchain_archive}"
 readonly toolchain_sha256="${NIOH1FIX_LLVM_MINGW_SHA256}"
 readonly cache_directory="${XDG_CACHE_HOME:-${HOME}/.cache}/nioh1fix"
+readonly bundled_archive_path="${script_directory}/../third_party/archives/${toolchain_archive}"
 readonly toolchain_directory="${cache_directory}/llvm-mingw-${toolchain_release}"
-readonly archive_path="${cache_directory}/${toolchain_archive}"
 readonly native_clang="${toolchain_directory}/bin/clang++"
 readonly windows_clang="${toolchain_directory}/bin/x86_64-w64-mingw32-clang++"
 
 mkdir -p "${cache_directory}"
-if [[ ! -f "${archive_path}" ]]; then
+archive_path="${cache_directory}/${toolchain_archive}"
+if [[ -f "${bundled_archive_path}" ]]; then
+    archive_path="${bundled_archive_path}"
+elif [[ ! -f "${archive_path}" ]]; then
     curl -fL --proto '=https' --tlsv1.2 --retry 2 \
         "${toolchain_url}" -o "${archive_path}"
 fi
+readonly archive_path
 printf '%s  %s\n' "${toolchain_sha256}" "${archive_path}" |
     sha256sum --check --status
 
