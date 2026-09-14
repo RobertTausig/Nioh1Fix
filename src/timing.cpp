@@ -23,13 +23,12 @@ bool IsThirtyFpsProfile() {
 static void PublishTimingScale(double scale) {
     const LONG bits = FloatBits(IsThirtyFpsProfile() ? 1.0F : float(scale));
     InterlockedExchange(&g.timingScaleBits, bits);
-    if (g.timingData) InterlockedExchange(g.timingData, bits);
+    PublishTimingData(bits);
 }
 float GetNormalizedMotionDelta() {
     InterlockedIncrement(&g.motionCalls);
     return IsThirtyFpsProfile() ? 1.0F / 30.0F : ReadTimingScale() / 120.0F;
 }
-
 static void ClearTransientInput(void* manager) {
     auto* bytes = static_cast<std::uint8_t*>(manager);
     for (std::size_t player = 0; player < 4; ++player) {
@@ -67,7 +66,6 @@ void NormalizedInputUpdate(void* manager) {
         InterlockedIncrement(&g.inputSkipped); ClearTransientInput(manager);
     }
 }
-
 bool NormalizedTextScrollUpdate(void* controller) {
     if (g.timingData) InterlockedIncrement(g.timingData + 8);
     if (!g.originalTextScrollUpdate) return false;
@@ -133,7 +131,8 @@ void LogDiagnostics(std::uint8_t* table, DWORD elapsed) {
         << ", scl_animation_steps=" << Counter(3) << ", statistical_ocean_updates="
         << Counter(4) << ", cloud_plane_updates=" << Counter(5)
         << ", cloud_circle_updates=" << Counter(6) << ", cloud_particle_updates="
-        << Counter(7) << ", text_scroll_updates=" << Counter(8)
+        << Counter(7) << PostureTimingDiagnostics()
+        << ", text_scroll_updates=" << Counter(8)
         << ", input_updates=" << g.inputUpdates
         << ", input_accepted=" << g.inputAccepted << ", input_skipped=" << g.inputSkipped;
     const LONG64 ticks = InterlockedCompareExchange64(&g.lastPresentInterval, 0, 0);

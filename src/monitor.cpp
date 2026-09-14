@@ -24,6 +24,7 @@ static bool MaintainOptional(const PeImage& image, const CompatibilityPlan& plan
         for (const auto& patch : patches.motion) if (!IsApplied(patch)) {
             Log("An animation timing call changed unexpectedly."); return false;
         }
+    if (!MaintainProjectileTiming(image, plan, patches)) return false;
     for (std::size_t i = 0; i < kHooks.size(); ++i) {
         auto& state = patches.hooks[i];
         if (state.status == PatchStatus::pending)
@@ -73,6 +74,7 @@ static void LogSummary(const PatchSet& patches, unsigned reapplyCount) {
         << ", vegetation_animation=" << Normalized(patches.hooks[2].status)
         << ", interface_animation=" << Normalized(patches.hooks[3].status)
         << ", overflow_text_scrolling=" << Normalized(patches.textScrollStatus)
+        << ", projectile_posture=" << Normalized(patches.postureTiming.status)
         << ", water_animation=" << Normalized(patches.hooks[4].status)
         << ", cloud_animation=" << (clouds ? "normalized" : "baseline")
         << ", camera_input=" << Normalized(patches.hooks[0].status)

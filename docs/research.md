@@ -157,6 +157,9 @@ Relevant RVAs for the supported build:
 - Shared gameplay-action timer update: `0x0071D670`
 - Push-button action-rate update: `0x00730200`
 - Per-action consecutive-held counters: `0x00750220`
+- CharacterObject worker dispatch: `0x00775A20`
+- Delta-driven worker phases: `0x0076C0F0`, `0x0076D990`, `0x007703A0`
+- Script-visible Shot category check: `0x009381FC`
 
 RVAs and PE metadata are documentation and diagnostics. Runtime writes use the
 fully validated compatibility plan derived from relocation-aware signatures.
@@ -218,6 +221,48 @@ physical-input sampler. The validated correction preserves every action edge
 but caps only continued held-counter advancement at the original 60 Hz
 cadence.
 
+## Projectile Timing Investigation
+
+Projectile velocity increased with unlocked
+framerate. Tests at 45 and 135 Hz rejected three plausible paths because their
+counters remained zero while ordinary-arrow speed still changed threefold:
+
+- The shot-manager copied delta at RVA `0x0078DB98`.
+- Category-4 `CharacterObjectUpdateWorker` branches. RTTI later proved
+  `ChildShotObject` derives from `ChildGameObjectBase`, not CharacterObject.
+- The script-visible `Shot::SetVelocity` store at RVA `0x00938242`.
+
+Counters for Gadget creation (`0x00943240`), `ChildShotObject` transforms
+(`0x00744EB0`), and `MultiArrows` (`0x00E2A500`) identified only ChildShot as
+the ordinary-arrow path. Its category-4 `Shot` uses the dispatch table at
+`0x017996F0` and the direct update at `0x00DE42D0`. That update already receives
+an inverse-rate delta: about `0.667` at 45 Hz and `0.222` at 135 Hz.
+
+The nested `+0x1D0` motion component was absent and `+0x1E0` inactive. Scaling
+decoded ChildShot positions also had no visible effect. Correlation showed
+those positions and Shot `+0xF0` were already wall-clock normalized, identifying
+them as synchronization or collision state. RTTI instead identified Shot
+`+0x78` as `ControlScriptObject` and `+0x88` as `PostureAnimeObject`.
+
+The Shot update passes that delta to `PostureAnimeObject` at `0x0095FFD0`, but
+the callee only checks that it is positive and advances one integer animation
+frame per invocation. Two unique signatures validate the Shot-specific call
+layout and its complete callee before patching. A per-posture accumulator now
+converts the delta to a 60 Hz cadence while preserving stock 30 FPS profiles.
+
+Runtime counters confirmed `0.441` steps per 135 Hz call and `1.332` per 45 Hz
+call. The user observed identical ordinary-arrow velocity at both caps. At
+60 Hz, delta `0.5` produces exactly one original step per update.
+
+After validation, the Gadget, ChildShot, MultiArrows, direct-Shot, component,
+dispatch-table, and transform-correlation diagnostics were removed from the
+release path; the decisive observations are summarized above. A generic
+callback-hook builder remains in `src/diagnostic_hooks.cpp`; it is inactive by
+default and preserves volatile argument registers, flags, and selected SIMD
+registers. The [diagnostic hook guide](diagnostic-hooks.md) documents its safe
+use. Future investigations therefore add only their relocation-aware signature
+and capture callback rather than reconstructing the trampoline machinery.
+
 ## Validation
 
 Validated on Linux with Proton:
@@ -234,6 +279,8 @@ Validated on Linux with Proton:
   hold-to-run behavior and no observed input regressions.
 - Stable horizontal overflow-text speed while changing external caps; the
   Amrita Gauge pulse remained correct in the same build.
+- Stable ordinary enemy-arrow velocity at 45 and 135 Hz, normalized to the
+  original 60 Hz cadence.
 - Clean startup after the final accessor-based implementation.
 
 Areas that still warrant broader regression testing include cutscenes, physics,

@@ -41,10 +41,12 @@ struct HookState { PatchStatus status{}; PatchRecord patch{}; };
 struct HookResources { std::uint8_t* code{}; std::uint8_t* data{}; };
 using InputUpdateFunction = void (*)(void*);
 using TextScrollUpdateFunction = bool (*)(void*);
+using PostureAnimeUpdateFunction = void (*)(void*, float);
 struct CompatibilityPlan {
     std::uint8_t* gameplay{}, *limiter{}, *present{}, *table{}, *inputCall{},
-        *textScroll{}, *actionCounters{};
+        *textScroll{}, *actionCounters{}, *postureCall{};
     InputUpdateFunction inputTarget{};
+    PostureAnimeUpdateFunction postureTarget{};
     std::array<std::uint8_t*, 3> motionCalls{};
     std::array<std::uint8_t*, 8> hookBlocks{};
     volatile LONG* activeProfile{};
@@ -56,6 +58,7 @@ struct PatchSet {
     std::array<PatchRecord, 3> motion{};
     PatchStatus motionStatus{}, inputStatus{}, textScrollStatus{},
         actionCounterStatus{};
+    HookState postureTiming{};
     std::array<HookState, 8> hooks{};
     HookResources resources{};
 };
@@ -70,10 +73,12 @@ struct State {
     volatile LONG presentCalls{}, presentWouldBlock{}, presentFailures{};
     volatile LONG64 presentTicks{}, previousPresentTick{}, lastPresentInterval{};
     volatile LONG motionCalls{}, inputUpdates{}, inputAccepted{}, inputSkipped{};
+    volatile LONG postureCalls{}, postureSteps{}, postureSkipped{};
     LONG64 previousInputTick{};
     double inputAccumulator{};
     InputUpdateFunction originalInputUpdate{};
     TextScrollUpdateFunction originalTextScrollUpdate{};
+    PostureAnimeUpdateFunction originalPostureAnimeUpdate{};
 };
 extern State g;
 
@@ -97,6 +102,7 @@ bool IsApplied(const PatchRecord& patch);
 
 float ReadTimingScale();
 LONG Counter(std::size_t index);
+void PublishTimingData(LONG bits);
 bool IsThirtyFpsProfile();
 float GetNormalizedMotionDelta();
 void NormalizedInputUpdate(void* manager);
@@ -104,13 +110,18 @@ bool NormalizedTextScrollUpdate(void* controller);
 HRESULT AggressivePresent(void* renderer, const std::uint8_t* config);
 float GetGameplayReferenceFps();
 void LogDiagnostics(std::uint8_t* table, DWORD elapsed);
+std::string PostureTimingDiagnostics();
 
 bool EnsureHookResources(const PeImage& image, HookResources& resources);
 PatchStatus InstallBlockHook(const PeImage& image, const HookSpec& spec,
                              std::uint8_t* block,
                              HookState& state, HookResources& resources);
+PatchStatus InstallPostureTiming(const PeImage& image,
+    const CompatibilityPlan& plan, HookState& state, HookResources& resources);
 PatchStatus InstallMotionHooks(const PeImage& image,
                                const CompatibilityPlan& plan, PatchSet& patches);
+bool MaintainProjectileTiming(const PeImage& image,
+    const CompatibilityPlan& plan, PatchSet& patches);
 PatchStatus InstallInputHook(const PeImage& image,
                              const CompatibilityPlan& plan, PatchSet& patches);
 PatchStatus InstallActionCounterHook(const PeImage& image,

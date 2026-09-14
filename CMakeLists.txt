@@ -63,11 +63,14 @@ if(WIN32)
     add_library(Nioh1Fix SHARED
         src/action_input.cpp
         src/compatibility.cpp
+        src/diagnostic_hooks.cpp
         src/dllmain.cpp
         src/hooks.cpp
         src/monitor.cpp
         src/patches.cpp
         src/platform.cpp
+        src/projectile_posture.cpp
+        src/projectiles.cpp
         src/timing.cpp
     )
     target_link_libraries(Nioh1Fix PRIVATE nioh1fix_core)

@@ -5,6 +5,11 @@
 #include <sstream>
 
 namespace nioh1fix::runtime {
+void PublishTimingData(LONG bits) {
+    if (!g.timingData) return;
+    InterlockedExchange(g.timingData, bits);
+}
+
 static std::uint8_t* AllocateNear(const PeImage& image, SIZE_T size) {
     SYSTEM_INFO info{}; GetSystemInfo(&info);
     const auto granularity = std::uintptr_t(info.dwAllocationGranularity);
@@ -58,14 +63,14 @@ bool EnsureHookResources(const PeImage& image, HookResources& resources) {
     std::memcpy(code + 32, textScroll.data(), textScroll.size());
     auto* values = reinterpret_cast<LONG*>(data);
     values[0] = std::bit_cast<LONG>(ReadTimingScale());
-    for (std::size_t i = 1; i < 9; ++i) values[i] = 0;
+    for (std::size_t i = 1; i < 16; ++i) values[i] = 0;
     DWORD ignored{};
     if (!VirtualProtect(code, 4096, PAGE_EXECUTE_READ, &ignored)) {
         VirtualFree(code, 0, MEM_RELEASE); VirtualFree(data, 0, MEM_RELEASE);
         resources = {}; Log("Could not make the optional timing relays executable.");
         return false;
     }
-    FlushInstructionCache(GetCurrentProcess(), code, 32);
+    FlushInstructionCache(GetCurrentProcess(), code, 4096);
     g.timingData = reinterpret_cast<volatile LONG*>(data);
     return true;
 }

@@ -11,6 +11,8 @@ ResolveStatus ResolveCompatibility(const PeImage& image, CompatibilityPlan& plan
     for (std::size_t i = 0; i < kHooks.size(); ++i)
         hookMatches[i] = FindCode(image, kHooks[i].signature);
     const SearchResult textScrollMatch = FindCode(image, kTextScroll);
+    const SearchResult postureMatch = FindCode(image, kPostureAnimeUpdate);
+    const SearchResult postureCallMatch = FindCode(image, kShotPostureCall);
 
     for (const auto& match : coreMatches) if (match.count > 1) {
         Log("A required signature was ambiguous; no changes were made.");
@@ -24,11 +26,17 @@ ResolveStatus ResolveCompatibility(const PeImage& image, CompatibilityPlan& plan
         Log("The text-scroll signature was ambiguous; no changes were made.");
         return ResolveStatus::incompatible;
     }
+    if (postureMatch.count > 1 || postureCallMatch.count > 1) {
+        Log("A Shot posture signature was ambiguous; no changes were made.");
+        return ResolveStatus::incompatible;
+    }
     for (const auto& match : coreMatches)
         if (!match.count) return ResolveStatus::pending;
     for (const auto& match : hookMatches)
         if (!match.count) return ResolveStatus::pending;
     if (!textScrollMatch.count) return ResolveStatus::pending;
+    if (!postureMatch.count || !postureCallMatch.count)
+        return ResolveStatus::pending;
 
     auto* active = DecodeRelative(coreMatches[0].address, 3, 7);
     auto* table = DecodeRelative(coreMatches[0].address + 11, 3, 7);
@@ -70,6 +78,14 @@ ResolveStatus ResolveCompatibility(const PeImage& image, CompatibilityPlan& plan
             return ResolveStatus::incompatible;
         }
     }
+    plan.postureCall = postureCallMatch.address + 0x3F;
+    auto* postureTarget = DecodeRelative(plan.postureCall, 1, 5);
+    if (postureTarget != postureMatch.address ||
+        !IsImageRange(image, plan.postureCall, 5, IMAGE_SCN_MEM_EXECUTE)) {
+        Log("The Shot posture call target did not validate; no changes were made.");
+        return ResolveStatus::incompatible;
+    }
+    plan.postureTarget = reinterpret_cast<PostureAnimeUpdateFunction>(postureTarget);
     if (!IsImageRange(image, textScrollMatch.address, kTextScrollOverwriteSize,
                       IMAGE_SCN_MEM_EXECUTE)) {
         Log("The text-scroll hook was outside executable code; no changes were made.");

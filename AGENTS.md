@@ -12,6 +12,10 @@ pulse, water, cloud movement, normal and aiming camera sensitivity, menu
 navigation, firearm input, and directional lock-on target switching are
 validated.
 Horizontal overflow-text scrolling is normalized.
+Ordinary-arrow velocity is normalized to the stock 60 Hz cadence through the
+Shot-specific `PostureAnimeObject` call. The investigation-specific projectile
+hooks and state have been removed from the release path. Reusable, inactive
+signature-bound callback diagnostics remain available for future research.
 
 Do not replace the working implementation with an earlier experimental
 approach without new evidence.
@@ -100,7 +104,11 @@ three cloud systems by the measured presentation interval. The raw normal-
 camera axes remain unscaled because lock-on target switching compares them
 with a fixed input threshold. A 60 Hz cadence gate runs the original input
 update on accepted samples and clears transient and repeat masks on skipped
-invocations.
+invocations. The Shot-specific `PostureAnimeObject` call converts its existing
+delta into a per-object 60 Hz cadence because the original callee ignores the
+delta magnitude and advances one animation frame per invocation. The generic
+diagnostic hook builder installs nothing unless an investigation explicitly
+supplies a signature, callback, counter, and trampoline location.
 
 Normal aggressive enemies confirmed correct idle, locomotion, blocking, and
 attack animation timing. Passive tutorial enemies had been mistaken for a
@@ -127,6 +135,11 @@ without new evidence; previous experiments regressed firearm and menu input.
 - Cloud-particle update: `0x003AF180`
 - Overflow-text scroll update: `0x0056C1B0`
 - Input cadence call: `0x00FABFA0`
+- Gadget shot-owner assignment: `0x00943240`
+- ChildShotObject transform: `0x00744EB0`
+- MultiArrows update: `0x00E2A500`
+- Shot update: `0x00DE42D0`
+- PostureAnimeObject update: `0x0095FFD0`
 
 These RVAs are documentation and diagnostic references only. Every current
 and future runtime address used for a read, write, call, or hook must be found
@@ -160,6 +173,17 @@ plan that validates all locations before the first write.
 - Scaling the fixed one-layout-frame branch of `CAnimatorBase@scl@ktgl@@` at
   RVA `0x0056D77C` did not affect the Amrita Gauge pulse. The active
   seconds-based branch at RVA `0x0053370A` is the validated fix.
+- Scaling the copied delta in the shot-manager loop at RVA `0x0078DB98` had no
+  effect. During an arrow-combat test at 45 and 135 Hz, its diagnostic counter
+  remained zero and arrow speed still changed approximately threefold.
+- Scaling category-4 objects in the three delta-driven CharacterObject worker
+  branches had no effect. During a second 45/135 Hz arrow test, its diagnostic
+  counter also remained zero and arrow behavior was unchanged. RTTI later
+  confirmed `ChildShotObject` derives from `ChildGameObjectBase`, not the
+  CharacterObject hierarchy.
+- Scaling the script-visible `Shot::SetVelocity` vector had no effect. During
+  a third arrow-combat test, `shot_velocity_sets` remained zero and arrow
+  behavior was unchanged, proving ordinary enemy arrows bypass that setter.
 
 See `docs/research.md` and Git history for the detailed sequence.
 
@@ -229,10 +253,13 @@ speed, then inspect `Nioh1Fix.log`.
 - `src/runtime.hpp`: shared runtime contracts, state, and constants.
 - `src/signatures.hpp`: relocation-aware signatures and hook specifications.
 - `src/compatibility.cpp`: complete fail-closed compatibility-plan resolution.
+- `src/diagnostic_hooks.cpp`: reusable inactive callback-diagnostic trampolines.
 - `src/platform.cpp`: logging, INI access, PE inspection, search, and writes.
 - `src/timing.cpp`: presentation measurement, callbacks, input, and diagnostics.
 - `src/hooks.cpp`: shared near-memory allocation and block-trampoline builder.
 - `src/patches.cpp`: motion, input, limiter, accessor, and Present patching.
+- `src/projectiles.cpp`: projectile timing installation and integrity checks.
+- `src/projectile_posture.cpp`: Shot posture-animation cadence normalization.
 - `src/monitor.cpp`: patch installation state machine and integrity checks.
 - `src/dllmain.cpp`: supported-process validation and DLL entry point only.
 - `tests/frame_profile_tests.cpp`: native tests for profile behavior.
@@ -240,6 +267,7 @@ speed, then inspect `Nioh1Fix.log`.
 - `VERSION`: release-version source of truth.
 - `Nioh1Fix.ini`: runtime enable switch.
 - `docs/research.md`: reverse-engineering record.
+- `docs/diagnostic-hooks.md`: agent guide for temporary diagnostic hooks.
 - `scripts/package.sh`: Linux packaging and pinned ASI loader.
 - `scripts/package.ps1`: Windows packaging.
 
