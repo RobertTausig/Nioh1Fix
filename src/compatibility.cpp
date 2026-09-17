@@ -13,6 +13,9 @@ ResolveStatus ResolveCompatibility(const PeImage& image, CompatibilityPlan& plan
     const SearchResult textScrollMatch = FindCode(image, kTextScroll);
     const SearchResult postureMatch = FindCode(image, kPostureAnimeUpdate);
     const SearchResult postureCallMatch = FindCode(image, kShotPostureCall);
+    const SearchResult controlScriptMatch = FindCode(image, kControlScriptTick);
+    const SearchResult controlScriptCallMatch = FindCode(
+        image, kShotControlScriptTickCall);
 
     for (const auto& match : coreMatches) if (match.count > 1) {
         Log("A required signature was ambiguous; no changes were made.");
@@ -27,7 +30,11 @@ ResolveStatus ResolveCompatibility(const PeImage& image, CompatibilityPlan& plan
         return ResolveStatus::incompatible;
     }
     if (postureMatch.count > 1 || postureCallMatch.count > 1) {
-        Log("A Shot posture signature was ambiguous; no changes were made.");
+        Log("A Shot timing signature was ambiguous; no changes were made.");
+        return ResolveStatus::incompatible;
+    }
+    if (controlScriptMatch.count > 1 || controlScriptCallMatch.count > 1) {
+        Log("A Shot control-script signature was ambiguous; no changes were made.");
         return ResolveStatus::incompatible;
     }
     for (const auto& match : coreMatches)
@@ -36,6 +43,8 @@ ResolveStatus ResolveCompatibility(const PeImage& image, CompatibilityPlan& plan
         if (!match.count) return ResolveStatus::pending;
     if (!textScrollMatch.count) return ResolveStatus::pending;
     if (!postureMatch.count || !postureCallMatch.count)
+        return ResolveStatus::pending;
+    if (!controlScriptMatch.count || !controlScriptCallMatch.count)
         return ResolveStatus::pending;
 
     auto* active = DecodeRelative(coreMatches[0].address, 3, 7);
@@ -86,6 +95,15 @@ ResolveStatus ResolveCompatibility(const PeImage& image, CompatibilityPlan& plan
         return ResolveStatus::incompatible;
     }
     plan.postureTarget = reinterpret_cast<PostureAnimeUpdateFunction>(postureTarget);
+    plan.controlScriptCall = controlScriptCallMatch.address + 0x1D;
+    auto* controlScriptTarget = DecodeRelative(plan.controlScriptCall, 1, 5);
+    if (controlScriptTarget != controlScriptMatch.address ||
+        !IsImageRange(image, plan.controlScriptCall, 5, IMAGE_SCN_MEM_EXECUTE)) {
+        Log("The Shot control-script call did not validate; no changes were made.");
+        return ResolveStatus::incompatible;
+    }
+    plan.controlScriptTarget = reinterpret_cast<ShotControlScriptTickFunction>(
+        controlScriptTarget);
     if (!IsImageRange(image, textScrollMatch.address, kTextScrollOverwriteSize,
                       IMAGE_SCN_MEM_EXECUTE)) {
         Log("The text-scroll hook was outside executable code; no changes were made.");

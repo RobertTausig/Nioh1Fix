@@ -62,16 +62,17 @@ stub has no unwind metadata.
 
 `EnsureHookResources` allocates one 4096-byte near-code page and one 4096-byte
 data page. Before choosing offsets, audit all current users in
-`src/signatures.hpp`, `src/hooks.cpp`, and `src/projectile_posture.cpp`.
+`src/signatures.hpp`, `src/hooks.cpp`, `src/projectile_control.cpp`, and
+`src/projectile_posture.cpp`.
 
 At the time of writing:
 
-- Code below offset 908 is reserved by production relays and timing stubs.
+- Code below offset 940 is reserved by production relays and timing stubs.
 - A callback diagnostic may require up to 384 bytes of code.
-- Offset 1024 is the first suitable diagnostic slot; additional slots must be
-  at least 384 bytes apart and remain within the 4096-byte page.
-- Data counters 0 through 8 are assigned to production diagnostics. Audit the
-  current code before using index 9 or higher.
+- Offset 1024 is the first suitable callback-diagnostic slot. Additional slots
+  must be at least 384 bytes apart and remain within the 4096-byte page.
+- Data slots 0 through 8 are assigned to production timing state and
+  diagnostics. Audit the current code before using index 9 or higher.
 
 Never overlap a stub, relay, or counter. These values are implementation
 details, not permanent ABI guarantees.

@@ -75,6 +75,8 @@ static void LogSummary(const PatchSet& patches, unsigned reapplyCount) {
         << ", interface_animation=" << Normalized(patches.hooks[3].status)
         << ", overflow_text_scrolling=" << Normalized(patches.textScrollStatus)
         << ", projectile_posture=" << Normalized(patches.postureTiming.status)
+        << ", projectile_lifetime_script="
+        << Normalized(patches.controlScriptTiming.status)
         << ", water_animation=" << Normalized(patches.hooks[4].status)
         << ", cloud_animation=" << (clouds ? "normalized" : "baseline")
         << ", camera_input=" << Normalized(patches.hooks[0].status)

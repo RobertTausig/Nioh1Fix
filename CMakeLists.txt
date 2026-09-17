@@ -69,6 +69,7 @@ if(WIN32)
         src/monitor.cpp
         src/patches.cpp
         src/platform.cpp
+        src/projectile_control.cpp
         src/projectile_posture.cpp
         src/projectiles.cpp
         src/timing.cpp
@@ -111,4 +112,8 @@ if(BUILD_TESTING)
     add_executable(input_timing_tests tests/input_timing_tests.cpp)
     target_link_libraries(input_timing_tests PRIVATE nioh1fix_core)
     add_test(NAME input_timing_tests COMMAND input_timing_tests)
+
+    add_executable(projectile_timing_tests tests/projectile_timing_tests.cpp)
+    target_link_libraries(projectile_timing_tests PRIVATE nioh1fix_core)
+    add_test(NAME projectile_timing_tests COMMAND projectile_timing_tests)
 endif()

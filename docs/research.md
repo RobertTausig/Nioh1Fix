@@ -247,21 +247,76 @@ them as synchronization or collision state. RTTI instead identified Shot
 The Shot update passes that delta to `PostureAnimeObject` at `0x0095FFD0`, but
 the callee only checks that it is positive and advances one integer animation
 frame per invocation. Two unique signatures validate the Shot-specific call
-layout and its complete callee before patching. A per-posture accumulator now
-converts the delta to a 60 Hz cadence while preserving stock 30 FPS profiles.
+layout and its complete callee before patching. A per-posture accumulator
+preserves stock 30 FPS profiles and converts the dynamic-profile delta into a
+framerate-independent cadence.
 
-Runtime counters confirmed `0.441` steps per 135 Hz call and `1.332` per 45 Hz
-call. The user observed identical ordinary-arrow velocity at both caps. At
-60 Hz, delta `0.5` produces exactly one original step per update.
+The first production candidate multiplied the delta by two and therefore
+produced 60 posture steps per second. Runtime counters confirmed `0.441` steps
+per 135 Hz call and `1.332` per 45 Hz call, and ordinary-arrow velocity was
+identical at both caps. Subsequent comparison found that normalized projectile
+speeds remained approximately twice the stock base speed. The validated
+correction maps each delta unit to one step, targeting 30 posture steps per
+second: `0.222`
+steps per 135 Hz call, `0.667` per 45 Hz call, and one step every two calls at
+60 Hz. The passed delta remains unchanged because the original callee ignores
+its magnitude.
 
-After validation, the Gadget, ChildShot, MultiArrows, direct-Shot, component,
-dispatch-table, and transform-correlation diagnostics were removed from the
-release path; the decisive observations are summarized above. A generic
-callback-hook builder remains in `src/diagnostic_hooks.cpp`; it is inactive by
-default and preserves volatile argument registers, flags, and selected SIMD
-registers. The [diagnostic hook guide](diagnostic-hooks.md) documents its safe
-use. Future investigations therefore add only their relocation-aware signature
-and capture callback rather than reconstructing the trampoline machinery.
+The corrected speed reduced both player and enemy projectile reach by the same
+amount at 45, 60, and 135 FPS, and the projectiles visibly disappeared in
+mid-air. A candidate hook halved the apparent Shot expiry countdown at object
+offset `+0x304`, but its runtime counter remained zero throughout the arrow
+test; that path is inactive for the tested projectiles and was removed.
+
+The next candidate halved stateful displacement in the active
+`ChildShotObject` transform, preserving raw samples in Shot `+0x160` and
+accumulating output in `+0x170`. Runtime counters confirmed that the hook was
+active, but reach became significantly longer at 45 Hz than at 135 Hz. The
+transform stream is therefore not a valid fixed-factor correction point and
+the behavior-changing hook was removed.
+
+The first termination diagnostic observed the generic end-event setter at RVA
+`0x00435760` and the category-4 terminal flag stores at RVA `0x00749712`.
+Both counters remained zero while the Shot posture counter reached 2,458, so
+those paths were removed.
+
+The direct Shot update has two earlier exits. RVA `0x00DE4330` sets owner/end
+flag `+0x1A5`; RVA `0x00DE43AF` sets expiry flag `+0x1A1` when countdown
+`+0x304` is already zero. The latter can execute without reaching the rejected
+countdown-subtraction hook, explaining its zero count. During a 135 Hz test,
+the owner/end counter stayed zero while five projectiles reached the expiry
+store, identifying the active mid-air disappearance path.
+
+The next candidate recorded each Shot's first posture-update time and first
+already-expired attempt, then delayed that exact end flag until twice the
+observed original wall-clock lifetime. Reach nevertheless remained greater at
+45 Hz than at 135 Hz, so delaying the terminal store did not correct the source
+of the cap dependence and the hook was removed.
+
+Static tracing initially identified a no-delta call on Shot `+0x78` to
+`ControlScriptObject` event dispatcher RVA `0x0094EAE0`. Gating the
+Shot-specific call at RVA `0x00DE496B` to 30 Hz did not change reach. Runtime
+counters explained why: it ran only 18 times against 2,167 posture calls, so it
+is an occasional event path rather than the per-frame lifetime source. That
+candidate was removed.
+
+The active expiry predicate call at Shot RVA `0x00DE43A6` targets
+`ControlScriptObject` RVA `0x0094FCF0`. Full disassembly shows that this is not
+a read-only predicate: after processing script state it increments integer
+fields `+0x14` and `+0x1C` on every invocation, then returns whether the script
+remains alive. The validated correction gates this exact Shot-specific call
+with a bounded, synchronized, timeout-reset per-ControlScript accumulator
+targeting 30 ticks per second. Skipped calls return true so the Shot remains alive;
+accepted calls preserve the original result, and stock 30 FPS profiles retain
+one original tick per invocation. Runtime diagnostics at approximately 135 Hz
+recorded 32,655 tick attempts and 7,253 accepted original steps, a ratio of
+`0.222`, matching `30 / 135`. Runtime comparison then found identical velocity
+and reach at 45 and 135 Hz for tested player and enemy projectiles.
+
+Earlier Gadget, ChildShot, MultiArrows, direct-Shot, component, dispatch-table,
+and transform-correlation diagnostics were removed after their findings were
+recorded. The [diagnostic hook guide](diagnostic-hooks.md) documents the safe
+callback trampoline used by the completed termination investigation.
 
 ## Validation
 
@@ -279,8 +334,8 @@ Validated on Linux with Proton:
   hold-to-run behavior and no observed input regressions.
 - Stable horizontal overflow-text speed while changing external caps; the
   Amrita Gauge pulse remained correct in the same build.
-- Stable ordinary enemy-arrow velocity at 45 and 135 Hz, normalized to the
-  original 60 Hz cadence.
+- Stable player and enemy projectile velocity and reach at 45 and 135 Hz. The
+  30 Hz base-speed calibration visually matches unmodded stock 60 FPS.
 - Clean startup after the final accessor-based implementation.
 
 Areas that still warrant broader regression testing include cutscenes, physics,

@@ -1,8 +1,7 @@
+#include "projectile_core.hpp"
 #include "runtime.hpp"
 
-#include <algorithm>
 #include <array>
-#include <cmath>
 #include <cstring>
 #include <sstream>
 
@@ -34,15 +33,13 @@ void NormalizedPostureAnimeUpdate(void* posture, float delta) {
     auto original = g.originalPostureAnimeUpdate;
     if (!original) return;
     int steps = 1;
-    if (!IsThirtyFpsProfile() && std::isfinite(delta) && delta > 0.0F) {
+    if (UsesDynamicProjectileCadence(IsThirtyFpsProfile(), delta)) {
         const ULONGLONG now = GetTickCount64();
         AcquireSRWLockExclusive(&cadenceLock);
         auto& record = FindCadenceRecord(posture, now);
         if (now - record.lastTick > 500) record.accumulator = 0.0;
         record.lastTick = now;
-        record.accumulator += std::clamp(double(delta) * 2.0, 0.03, 6.0);
-        steps = static_cast<int>(record.accumulator);
-        record.accumulator -= steps;
+        steps = AdvanceProjectileCadence(record.accumulator, delta, false);
         ReleaseSRWLockExclusive(&cadenceLock);
     }
     if (!steps) {
@@ -55,9 +52,13 @@ void NormalizedPostureAnimeUpdate(void* posture, float delta) {
 
 std::string PostureTimingDiagnostics() {
     std::ostringstream out;
-    out << ", posture_calls=" << g.postureCalls
+    out << ", posture_target_hz=" << kProjectilePostureCadenceHz
+        << ", posture_calls=" << g.postureCalls
         << ", posture_steps=" << g.postureSteps
-        << ", posture_skipped=" << g.postureSkipped;
+        << ", posture_skipped=" << g.postureSkipped
+        << ", control_script_ticks=" << g.controlScriptTicks
+        << ", control_script_steps=" << g.controlScriptSteps
+        << ", control_script_skipped=" << g.controlScriptSkipped;
     return out.str();
 }
 
@@ -88,7 +89,7 @@ PatchStatus InstallPostureTiming(const PeImage& image,
         g.originalPostureAnimeUpdate = nullptr;
         return PatchStatus::unavailable;
     }
-    Log("Normalized the Shot posture-animation cadence to 60 Hz.");
+    Log("Set the Shot posture-animation cadence to the stock 30 Hz cadence.");
     return PatchStatus::installed;
 }
 } // namespace nioh1fix::runtime

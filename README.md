@@ -11,7 +11,8 @@ It corrects the framerate-dependent behavior of:
   switching;
 - menu navigation and horizontally scrolling menu text;
 - gameplay input timing, including firearm input and distinction
-  between short-press evasion and hold-to-run.
+  between short-press evasion and hold-to-run;
+- player and enemy projectile velocity and reach.
 
 
 The mod has been tested with the Steam 1.24.8.0 executable. This mod is developed and used by me on Linux.

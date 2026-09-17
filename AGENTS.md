@@ -12,10 +12,8 @@ pulse, water, cloud movement, normal and aiming camera sensitivity, menu
 navigation, firearm input, and directional lock-on target switching are
 validated.
 Horizontal overflow-text scrolling is normalized.
-Ordinary-arrow velocity is normalized to the stock 60 Hz cadence through the
-Shot-specific `PostureAnimeObject` call. The investigation-specific projectile
-hooks and state have been removed from the release path. Reusable, inactive
-signature-bound callback diagnostics remain available for future research.
+Player and enemy projectile velocity and reach are normalized to the stock
+30 Hz cadence and validated at 45 and 135 Hz; stock 30 FPS profiles are unchanged.
 
 Do not replace the working implementation with an earlier experimental
 approach without new evidence.
@@ -105,10 +103,12 @@ camera axes remain unscaled because lock-on target switching compares them
 with a fixed input threshold. A 60 Hz cadence gate runs the original input
 update on accepted samples and clears transient and repeat masks on skipped
 invocations. The Shot-specific `PostureAnimeObject` call converts its existing
-delta into a per-object 60 Hz cadence because the original callee ignores the
-delta magnitude and advances one animation frame per invocation. The generic
-diagnostic hook builder installs nothing unless an investigation explicitly
-supplies a signature, callback, counter, and trampoline location.
+delta into a per-object 30 Hz cadence because the original callee ignores the
+delta magnitude and advances one animation frame per invocation. A second
+Shot-specific cadence gate normalizes the mutating `ControlScriptObject`
+lifetime predicate to 30 ticks per second. Skipped ticks report that the script
+is still alive. Both use bounded, synchronized, timeout-reset per-object
+accumulators; stock 30 FPS profiles call both original functions once.
 
 Normal aggressive enemies confirmed correct idle, locomotion, blocking, and
 attack animation timing. Passive tutorial enemies had been mistaken for a
@@ -139,6 +139,8 @@ without new evidence; previous experiments regressed firearm and menu input.
 - ChildShotObject transform: `0x00744EB0`
 - MultiArrows update: `0x00E2A500`
 - Shot update: `0x00DE42D0`
+- Shot ControlScript lifetime call: `0x00DE43A6`
+- ControlScriptObject lifetime tick: `0x0094FCF0`
 - PostureAnimeObject update: `0x0095FFD0`
 
 These RVAs are documentation and diagnostic references only. Every current
@@ -184,6 +186,14 @@ plan that validates all locations before the first write.
 - Scaling the script-visible `Shot::SetVelocity` vector had no effect. During
   a third arrow-combat test, `shot_velocity_sets` remained zero and arrow
   behavior was unchanged, proving ordinary enemy arrows bypass that setter.
+- Scaling the apparent Shot expiry countdown at `+0x304` had no effect on the
+  reduced reach. Its runtime counter remained zero throughout the arrow test.
+- Halving stateful `ChildShotObject` transform displacement made projectile
+  reach significantly longer at 45 Hz than at 135 Hz and was removed.
+- Delaying the direct Shot expiry flag until twice the first observed lifetime
+  did not change the greater 45 Hz reach relative to 135 Hz and was removed.
+- Gating the Shot ControlScript event dispatcher at `0x00DE496B` was ineffective;
+  it ran only 18 times against 2,167 posture calls and was removed.
 
 See `docs/research.md` and Git history for the detailed sequence.
 
@@ -259,6 +269,7 @@ speed, then inspect `Nioh1Fix.log`.
 - `src/hooks.cpp`: shared near-memory allocation and block-trampoline builder.
 - `src/patches.cpp`: motion, input, limiter, accessor, and Present patching.
 - `src/projectiles.cpp`: projectile timing installation and integrity checks.
+- `src/projectile_control.cpp`: Shot lifetime-source cadence normalization.
 - `src/projectile_posture.cpp`: Shot posture-animation cadence normalization.
 - `src/monitor.cpp`: patch installation state machine and integrity checks.
 - `src/dllmain.cpp`: supported-process validation and DLL entry point only.
