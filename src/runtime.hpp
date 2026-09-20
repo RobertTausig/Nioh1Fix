@@ -16,7 +16,7 @@ inline constexpr DWORD kSupportedTimestamp = 0x6307ABD5;
 inline constexpr DWORD kSupportedImageSize = 0x0306E000;
 inline constexpr int kInternalTargetFps = 120;
 inline constexpr DWORD kMonitorIntervalMs = 250;
-inline constexpr DWORD kMonitorDurationMs = 120'000;
+inline constexpr DWORD kMonitorDurationMs = 300'000;
 inline constexpr DWORD kDiagnosticsIntervalMs = 2'000;
 
 struct PeImage { std::uint8_t* base{}; IMAGE_NT_HEADERS64* headers{}; };
@@ -43,9 +43,13 @@ using InputUpdateFunction = void (*)(void*);
 using TextScrollUpdateFunction = bool (*)(void*);
 using PostureAnimeUpdateFunction = void (*)(void*, float);
 using ShotControlScriptTickFunction = bool (*)(void*);
+using ArcherActionUpdateFunction = void (*)(void*);
+using ArcherMotionUpdateFunction = void (*)(void*, void*);
 struct CompatibilityPlan {
     std::uint8_t* gameplay{}, *limiter{}, *present{}, *table{}, *inputCall{},
-        *textScroll{}, *actionCounters{}, *postureCall{}, *controlScriptCall{};
+        *textScroll{}, *actionCounters{}, *postureCall{}, *controlScriptCall{},
+        *childShotTransformBlock{}, *actionEventUpdateBlock{},
+        *shotConstructorBlock{}, *archerMotionUpdateBlock{};
     InputUpdateFunction inputTarget{};
     PostureAnimeUpdateFunction postureTarget{};
     ShotControlScriptTickFunction controlScriptTarget{};
@@ -60,7 +64,9 @@ struct PatchSet {
     std::array<PatchRecord, 3> motion{};
     PatchStatus motionStatus{}, inputStatus{}, textScrollStatus{},
         actionCounterStatus{};
-    HookState postureTiming{}, controlScriptTiming{};
+    HookState postureTiming{}, controlScriptTiming{}, archerHoldDiagnostic{},
+        actionEventDiagnostic{}, shotConstructorDiagnostic{},
+        archerMotionTiming{};
     std::array<HookState, 8> hooks{};
     HookResources resources{};
 };
@@ -77,12 +83,18 @@ struct State {
     volatile LONG motionCalls{}, inputUpdates{}, inputAccepted{}, inputSkipped{};
     volatile LONG postureCalls{}, postureSteps{}, postureSkipped{};
     volatile LONG controlScriptTicks{}, controlScriptSteps{}, controlScriptSkipped{};
+    PVOID volatile trackedArcherAction{};
+    PVOID volatile trackedArcherOwner{};
+    volatile LONG trackedActionEventCalls{}, trackedActionDeltaBits{};
+    volatile LONG trackedActionVtableRva{}, trackedFrameGetterRva{};
     LONG64 previousInputTick{};
     double inputAccumulator{};
     InputUpdateFunction originalInputUpdate{};
     TextScrollUpdateFunction originalTextScrollUpdate{};
     PostureAnimeUpdateFunction originalPostureAnimeUpdate{};
     ShotControlScriptTickFunction originalShotControlScriptTick{};
+    ArcherActionUpdateFunction originalArcherActionUpdate{};
+    ArcherMotionUpdateFunction originalArcherMotionUpdate{};
 };
 extern State g;
 
@@ -114,21 +126,13 @@ bool NormalizedTextScrollUpdate(void* controller);
 HRESULT AggressivePresent(void* renderer, const std::uint8_t* config);
 float GetGameplayReferenceFps();
 void LogDiagnostics(std::uint8_t* table, DWORD elapsed);
-std::string PostureTimingDiagnostics();
-bool NormalizedShotControlScriptTick(void* controlScript);
 
 bool EnsureHookResources(const PeImage& image, HookResources& resources);
 PatchStatus InstallBlockHook(const PeImage& image, const HookSpec& spec,
                              std::uint8_t* block,
                              HookState& state, HookResources& resources);
-PatchStatus InstallPostureTiming(const PeImage& image,
-    const CompatibilityPlan& plan, HookState& state, HookResources& resources);
-PatchStatus InstallShotControlScriptTiming(const PeImage& image,
-    const CompatibilityPlan& plan, HookState& state, HookResources& resources);
 PatchStatus InstallMotionHooks(const PeImage& image,
                                const CompatibilityPlan& plan, PatchSet& patches);
-bool MaintainProjectileTiming(const PeImage& image,
-    const CompatibilityPlan& plan, PatchSet& patches);
 PatchStatus InstallInputHook(const PeImage& image,
                              const CompatibilityPlan& plan, PatchSet& patches);
 PatchStatus InstallActionCounterHook(const PeImage& image,

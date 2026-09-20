@@ -1,3 +1,4 @@
+#include "archer_diagnostic.hpp"
 #include "signatures.hpp"
 
 namespace nioh1fix::runtime {
@@ -123,6 +124,8 @@ ResolveStatus ResolveCompatibility(const PeImage& image, CompatibilityPlan& plan
     plan.actionCounters = coreMatches[7].address;
     plan.activeProfile = reinterpret_cast<volatile LONG*>(active);
     plan.inputTarget = reinterpret_cast<InputUpdateFunction>(inputTarget);
+    const auto archerStatus = ResolveArcherCompatibility(image, plan);
+    if (archerStatus != ResolveStatus::compatible) return archerStatus;
     plan.knownBuild = image.headers->FileHeader.TimeDateStamp == kSupportedTimestamp &&
         image.headers->OptionalHeader.SizeOfImage == kSupportedImageSize;
     return ResolveStatus::compatible;

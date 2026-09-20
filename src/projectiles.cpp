@@ -1,3 +1,4 @@
+#include "projectile_hooks.hpp"
 #include "signatures.hpp"
 
 namespace nioh1fix::runtime {

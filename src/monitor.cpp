@@ -1,3 +1,5 @@
+#include "archer_diagnostic.hpp"
+#include "projectile_hooks.hpp"
 #include "signatures.hpp"
 
 #include <cstring>
@@ -25,6 +27,8 @@ static bool MaintainOptional(const PeImage& image, const CompatibilityPlan& plan
             Log("An animation timing call changed unexpectedly."); return false;
         }
     if (!MaintainProjectileTiming(image, plan, patches)) return false;
+    if (!MaintainArcherHoldDiagnostic(image, plan, patches)) return false;
+    if (!MaintainActionEventDiagnostic(image, plan, patches)) return false;
     for (std::size_t i = 0; i < kHooks.size(); ++i) {
         auto& state = patches.hooks[i];
         if (state.status == PatchStatus::pending)
@@ -77,6 +81,15 @@ static void LogSummary(const PatchSet& patches, unsigned reapplyCount) {
         << ", projectile_posture=" << Normalized(patches.postureTiming.status)
         << ", projectile_lifetime_script="
         << Normalized(patches.controlScriptTiming.status)
+        << ", archer_hold_measurement="
+        << (patches.archerHoldDiagnostic.status == PatchStatus::installed ?
+            "active" : "unavailable")
+        << ", archer_action_event_trace="
+        << (patches.actionEventDiagnostic.status == PatchStatus::installed &&
+            patches.shotConstructorDiagnostic.status == PatchStatus::installed ?
+            "active" : "unavailable")
+        << ", archer_held_motion="
+        << Normalized(patches.archerMotionTiming.status)
         << ", water_animation=" << Normalized(patches.hooks[4].status)
         << ", cloud_animation=" << (clouds ? "normalized" : "baseline")
         << ", camera_input=" << Normalized(patches.hooks[0].status)

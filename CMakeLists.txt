@@ -61,6 +61,18 @@ target_compile_features(nioh1fix_core INTERFACE cxx_std_20)
 
 if(WIN32)
     add_library(Nioh1Fix SHARED
+        src/archer_action_plateau.cpp
+        src/archer_action_timing.cpp
+        src/archer_action_trace.cpp
+        src/archer_action_scan.cpp
+        src/archer_action_scan_nested.cpp
+        src/archer_action_scan_bytes.cpp
+        src/archer_compatibility.cpp
+        src/archer_hold_diagnostic.cpp
+        src/archer_hold_install.cpp
+        src/archer_motion_install.cpp
+        src/archer_motion_timing.cpp
+        src/archer_owner_scan.cpp
         src/action_input.cpp
         src/compatibility.cpp
         src/diagnostic_hooks.cpp

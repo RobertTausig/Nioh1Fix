@@ -1,4 +1,5 @@
-#include "runtime.hpp"
+#include "archer_diagnostic.hpp"
+#include "projectile_hooks.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -142,6 +143,7 @@ void LogDiagnostics(std::uint8_t* table, DWORD elapsed) {
         out << ", average_present_us=" << static_cast<long long>(
             double(g.presentTicks) * 1'000'000.0 / double(g.frequency.QuadPart) /
             double(g.presentCalls));
+    AppendArcherHoldDiagnostics(out);
     out << '.'; Log(out.str());
 }
 } // namespace nioh1fix::runtime

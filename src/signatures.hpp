@@ -60,6 +60,37 @@ inline constexpr auto kControlScriptTick = Pattern(
 inline constexpr auto kShotControlScriptTickCall = Pattern(
     "F30F108B04030000440F2FD17221488B4B784885C9746180791000745BE8"
     "????????84C07552C683A101000001EB49F30F5CC8");
+inline constexpr auto kChildShotTransform = Pattern(
+    "40534883EC30488B59204885DB0F849B00000066837B04040F8590000000"
+    "0F286230488D4C2420660F7FA3600100000F57C0F30F58A380010000F30F"
+    "108B64010000F30F588B84010000");
+inline constexpr HookSpec kChildShotReleaseDiagnostic{
+    kChildShotTransform, 0, 10, 1024, 9, {}, 0,
+    "ChildShot release diagnostic",
+    "Enabled the diagnostic-only archer arrow-release timer."
+};
+inline constexpr auto kActionEventUpdate = Pattern(
+    "488BC44154415641574883EC6048C740A8FEFFFFFF4889580848896810488970"
+    "18488978200F2970D80F2978C8440F2940B8488BF1C781AC000000FFFFFFFF");
+inline constexpr HookSpec kActionEventUpdateDiagnostic{
+    kActionEventUpdate, 0, 9, 1536, 10, {}, 0,
+    "action-event update diagnostic",
+    "Enabled the diagnostic-only tracked-archer action-event trace."
+};
+inline constexpr auto kArcherMotionUpdate = Pattern(
+    "48895C2408574883EC400F29742430488BFA488BD9E8????????F30F104760"
+    "0F2F87F0000000720A48834B4001F30F104760F30F1015????????F30F105B24"
+    "F30F104B2CF30F114328");
+inline constexpr std::size_t kArcherMotionUpdateOverwriteSize = 5;
+inline constexpr auto kShotConstructor = Pattern(
+    "4C8BDC49894B08555657415641574883EC5049C743B8FEFFFFFF49895B108BDA"
+    "488BF9B8040000006641894324418953206645894326498B4320488901488D05"
+    "????????4889410833F6488971104889711848897120");
+inline constexpr HookSpec kShotConstructorDiagnostic{
+    kShotConstructor, 0, 9, 2048, 11, {}, 0,
+    "Shot-constructor action correlation",
+    "Enabled the diagnostic-only Shot/action correlation trace."
+};
 inline constexpr auto kCamera = Pattern(
     "488B0D????????F3440F103D????????4439A1AC0000007505F3410F59FF44"
     "39A1B00000007505F3450F59C7F3450F58D3F3450F58CC8B81B40000000F57C0");
